@@ -16,6 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: 安装 Tauri Linux 系统依赖
+        # clippy 与测试也会编译 Tauri；依赖清单遵循 Tauri 官方 GitHub Actions 示例。
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
       - name: 安装 pnpm
         # setup-node 的 cache: pnpm 依赖 pnpm 已在 PATH 中，必须放在其前一步。
         uses: pnpm/action-setup@v4
