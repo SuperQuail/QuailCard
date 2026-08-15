@@ -1,0 +1,41 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+prototype-dist
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+.playwright-mcp
+
+# 内置 ECDICT 词典数据（340 万词条，约 800 MB，不纳入版本控制）
+src-tauri/resources/ecdict.db
+
+# 编辑器临时文件
+*~
+*.tmp
+*.TMP
+
+# 参考资料
+references/
+
+# 项目原型
+prototype/

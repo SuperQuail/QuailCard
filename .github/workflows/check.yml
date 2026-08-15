@@ -1,0 +1,54 @@
+name: check
+
+# 日常检查工作流：普通 push（任意分支）与 PR 时运行静态检查与测试。
+# 只做快速验证（fmt / clippy / 前后端测试），不做多平台打包；发布走 publish.yml。
+on:
+  push:
+    branches-ignore:
+      - release # release 分支由 publish.yml 负责五平台打包，避免重复构建。
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: fmt / clippy / tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 pnpm
+        # setup-node 的 cache: pnpm 依赖 pnpm 已在 PATH 中，必须放在其前一步。
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: 'pnpm'
+
+      - name: 安装 Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 前端类型检查与测试
+        run: |
+          pnpm typecheck
+          pnpm test
+
+      - name: Rust 格式检查
+        working-directory: src-tauri
+        run: cargo fmt --all -- --check
+
+      - name: Rust 静态检查
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Rust 测试
+        working-directory: src-tauri
+        run: cargo test

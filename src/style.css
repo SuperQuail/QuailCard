@@ -1,0 +1,620 @@
+@import "tailwindcss";
+
+/* ============================================================
+ * 设计 token：全部颜色通过运行时 CSS 变量间接引用，
+ * 浅色主题是暖纸感（护眼），深色主题参考 Obsidian 的暗灰。
+ * ============================================================ */
+@theme {
+  --color-bg: var(--qc-bg);
+  --color-bg-side: var(--qc-bg-side);
+  --color-bg-paper: var(--qc-bg-paper);
+  --color-bg-hover: var(--qc-bg-hover);
+  --color-bg-active: var(--qc-bg-active);
+  --color-ink: var(--qc-ink);
+  --color-ink-2: var(--qc-ink-2);
+  --color-ink-3: var(--qc-ink-3);
+  --color-hairline: var(--qc-hairline);
+  --color-accent: var(--qc-accent);
+  --color-accent-strong: var(--qc-accent-strong);
+  --color-accent-soft: var(--qc-accent-soft);
+  --color-marker: var(--qc-marker);
+  --color-code-bg: var(--qc-code-bg);
+  --color-danger: var(--qc-danger);
+  --color-warning: var(--qc-warning);
+  --color-success: var(--qc-success);
+
+  --font-ui: -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", sans-serif;
+  --font-serif: Georgia, "Noto Serif SC", "Source Han Serif SC", "Songti SC", "SimSun", serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+}
+
+:root {
+  /* 浅色：暖纸 */
+  --qc-bg: #faf9f7;
+  --qc-bg-side: #f4f2ed;
+  --qc-bg-paper: #ffffff;
+  --qc-bg-hover: rgba(60, 58, 52, 0.055);
+  --qc-bg-active: rgba(74, 106, 156, 0.13);
+  --qc-ink: #37352f;
+  --qc-ink-2: #605c52;
+  --qc-ink-3: #9b978c;
+  --qc-hairline: #e9e6df;
+  --qc-accent: #4a6a9c;
+  --qc-accent-strong: #3a5780;
+  --qc-accent-soft: #e8edf5;
+  --qc-marker: rgba(74, 106, 156, 0.13);
+  --qc-code-bg: #f2f0ea;
+  --qc-danger: #a4443a;
+  --qc-warning: #8a6a1f;
+  --qc-success: #4a7a5c;
+  --editor-font-size: 16px;
+  --editor-line-height: 1.78;
+}
+
+.dark {
+  /* 深色：Obsidian 风格暗灰 */
+  --qc-bg: #1e1e1e;
+  --qc-bg-side: #232323;
+  --qc-bg-paper: #202020;
+  --qc-bg-hover: rgba(255, 255, 255, 0.065);
+  --qc-bg-active: rgba(110, 140, 190, 0.22);
+  --qc-ink: #d8d5cf;
+  --qc-ink-2: #b0ada6;
+  --qc-ink-3: #77746d;
+  --qc-hairline: #33322f;
+  --qc-accent: #7a9ac8;
+  --qc-accent-strong: #8fb0dd;
+  --qc-accent-soft: rgba(122, 154, 200, 0.16);
+  --qc-marker: rgba(122, 154, 200, 0.2);
+  --qc-code-bg: #2a2a28;
+  --qc-danger: #d07a70;
+  --qc-warning: #c9a35a;
+  --qc-success: #7db598;
+}
+
+/* ============================================================
+ * 基础：整个应用是连续工作台，没有页面感。
+ * ============================================================ */
+html,
+body,
+#app {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+body {
+  background: var(--qc-bg);
+  color: var(--qc-ink);
+  font-family: var(--font-ui);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--qc-accent);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: var(--qc-bg-active);
+}
+
+/* ============================================================
+ * 通用小件：幽灵按钮、图标按钮、快捷键徽标、输入框。
+ * 全部走背景高亮 + 无边框的笔记软件手感。
+ * ============================================================ */
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  color: var(--qc-ink-2);
+  transition: background-color 120ms, color 120ms;
+}
+
+.icon-btn:hover {
+  background: var(--qc-bg-hover);
+  color: var(--qc-ink);
+}
+
+.icon-btn.active {
+  background: var(--qc-bg-active);
+  color: var(--qc-accent-strong);
+}
+
+.ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--qc-ink-2);
+  transition: background-color 120ms, color 120ms;
+}
+
+.ghost-btn:hover {
+  background: var(--qc-bg-hover);
+  color: var(--qc-ink);
+}
+
+.primary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 6px;
+  background: var(--qc-accent);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background-color 120ms;
+}
+
+.primary-btn:hover {
+  background: var(--qc-accent-strong);
+}
+
+.primary-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.field-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--qc-hairline);
+  background: var(--qc-bg-paper);
+  font-size: 13px;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: var(--qc-accent);
+  box-shadow: 0 0 0 2px var(--qc-bg-active);
+}
+
+.field-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--qc-hairline);
+  background: var(--qc-bg-paper);
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.field-textarea:focus {
+  outline: none;
+  border-color: var(--qc-accent);
+  box-shadow: 0 0 0 2px var(--qc-bg-active);
+}
+
+kbd.kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border: 1px solid var(--qc-hairline);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--qc-bg-side);
+  color: var(--qc-ink-3);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* ============================================================
+ * CodeMirror 编辑器：Markdown 行内渲染样式与卡片锚点。
+ * ============================================================ */
+.qc-md-heading {
+  margin: 0.6em 0 0.2em;
+  font-weight: 700;
+  color: var(--qc-ink);
+}
+
+.qc-md-heading-1 {
+  font-size: 1.55em;
+}
+
+.qc-md-heading-2 {
+  font-size: 1.28em;
+}
+
+.qc-md-heading-3 {
+  font-size: 1.1em;
+}
+
+.qc-md-strong {
+  font-weight: 700;
+}
+
+.qc-md-em {
+  font-style: italic;
+}
+
+.qc-md-code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--qc-code-bg);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+.qc-md-link {
+  color: var(--qc-accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--qc-accent) 40%, transparent);
+}
+
+.qc-md-quote {
+  color: var(--qc-ink-2);
+  font-style: italic;
+}
+
+.qc-md-strike {
+  text-decoration: line-through;
+}
+
+.qc-md-marker {
+  color: var(--qc-ink-3);
+  opacity: 0.45;
+  font-weight: 400;
+}
+
+/* 卡片锚点：句段浅色标记 + 行内徽章。 */
+.qc-anchor-line {
+  background: var(--qc-marker);
+  border-radius: 3px;
+  padding: 1px 0;
+}
+
+.qc-anchor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 2px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--qc-hairline);
+  background: var(--qc-bg-paper);
+  color: var(--qc-accent-strong);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  vertical-align: baseline;
+}
+
+.qc-anchor-chip:hover {
+  border-color: var(--qc-accent);
+}
+
+/* ============================================================
+ * 文件树：VS Code 式行与缩进引导线。
+ * ============================================================ */
+.tree-row {
+  height: 22px;
+}
+
+.tree-row.is-selected {
+  background: color-mix(in srgb, var(--qc-bg-active) 55%, transparent);
+}
+
+.tree-row.is-active.is-selected {
+  background: var(--qc-bg-active);
+}
+
+.tree-row:focus-visible {
+  outline: 1px solid var(--qc-accent);
+  outline-offset: -1px;
+}
+
+.tree-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--qc-ink-3) 40%, transparent);
+  opacity: 0;
+  transition: opacity 0.1s linear;
+  pointer-events: none;
+}
+
+.tree-row:hover .tree-guide,
+.tree-row.is-active .tree-guide {
+  opacity: 1;
+}
+
+.tree-input {
+  height: 20px;
+  width: calc(100% - 16px);
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid var(--qc-accent);
+  background: var(--qc-bg-paper);
+  font-size: 12px;
+  outline: none;
+}
+
+/* ============================================================
+ * 设置视图：Obsidian 式设置行（左描述右控件，行间发丝线）。
+ * ============================================================ */
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--qc-hairline);
+}
+
+.setting-row:last-of-type {
+  border-bottom: 1px solid var(--qc-hairline);
+}
+
+/* ============================================================
+ * 编辑器正文排版：衬线、宽行距、居中阅读列。
+ * ============================================================ */
+.note-title {
+  font-family: var(--font-serif);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0.2px;
+}
+
+.note-body {
+  font-family: var(--font-serif);
+  font-size: var(--editor-font-size);
+  line-height: var(--editor-line-height);
+}
+
+.note-body h1,
+.note-h1 {
+  margin: 34px 0 12px;
+  font-size: 1.55em;
+  font-weight: 700;
+}
+
+.note-body h2,
+.note-h2 {
+  margin: 28px 0 10px;
+  font-size: 1.28em;
+  font-weight: 700;
+}
+
+.note-body h3,
+.note-h3 {
+  margin: 22px 0 8px;
+  font-size: 1.1em;
+  font-weight: 700;
+}
+
+.note-body p,
+.note-p {
+  margin: 0 0 14px;
+}
+
+.note-body ul,
+.note-ul {
+  margin: 0 0 14px;
+  padding-left: 22px;
+}
+
+.note-body li {
+  margin: 4px 0;
+  list-style: disc;
+}
+
+.note-quote {
+  margin: 0 0 14px;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--qc-hairline);
+  color: var(--qc-ink-2);
+  font-style: italic;
+}
+
+.note-code {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: var(--qc-code-bg);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.note-hr {
+  margin: 26px 0;
+  border: none;
+  border-top: 1px solid var(--qc-hairline);
+}
+
+.note-inline-code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--qc-code-bg);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+.note-bold {
+  font-weight: 700;
+}
+
+.note-italic {
+  font-style: italic;
+}
+
+/* 已拆卡句段：底色微标记 + 右侧卡片小徽章。 */
+.note-card-mark {
+  position: relative;
+  margin: 0 0 14px;
+  padding: 8px 12px 8px 14px;
+  border-radius: 6px;
+  background: var(--qc-marker);
+  border-left: 3px solid var(--qc-accent);
+  transition: background-color 120ms;
+}
+
+.note-card-mark:hover {
+  background: color-mix(in srgb, var(--qc-marker) 65%, var(--qc-bg-hover));
+}
+
+.card-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 6px;
+  border-radius: 999px;
+  background: var(--qc-bg-paper);
+  border: 1px solid var(--qc-hairline);
+  color: var(--qc-accent-strong);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.card-chip:hover {
+  border-color: var(--qc-accent);
+}
+
+/* 划词浮条：选中文本后出现在选区上方。 */
+.selection-bar {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 7px;
+  background: var(--qc-bg-paper);
+  border: 1px solid var(--qc-hairline);
+  box-shadow: 0 6px 20px rgba(30, 30, 30, 0.14);
+  animation: pop-in 120ms ease-out both;
+}
+
+/* ============================================================
+ * 覆盖层与动画。
+ * ============================================================ */
+.overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(30, 30, 28, 0.32);
+  backdrop-filter: blur(2px);
+  animation: fade-in 140ms ease-out both;
+}
+
+.modal-panel {
+  background: var(--qc-bg-paper);
+  border: 1px solid var(--qc-hairline);
+  border-radius: 10px;
+  box-shadow: 0 18px 50px rgba(20, 20, 18, 0.22);
+  animation: pop-in 150ms ease-out both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.stream-caret::after {
+  content: "▍";
+  margin-left: 1px;
+  color: var(--qc-accent);
+  animation: blink 0.9s steps(1) infinite;
+}
+
+/* ============================================================
+ * 滚动条：细而透明。
+ * ============================================================ */
+.soft-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.soft-scrollbar:hover {
+  scrollbar-color: color-mix(in srgb, var(--qc-ink-3) 45%, transparent) transparent;
+}
+
+.soft-scrollbar::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.soft-scrollbar::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  background-clip: content-box;
+}
+
+.soft-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--qc-ink-3) 45%, transparent);
+  background-clip: content-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

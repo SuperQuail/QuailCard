@@ -1,0 +1,90 @@
+name: publish
+
+# 发布工作流：参考 tauri-apps/tauri-action 官方模板，按本项目实际适配：
+# - 包管理器是 pnpm（setup-node 缓存前必须先装 pnpm，否则 cache 解析失败）。
+# - 打包需要内置 ECDICT 词典（tauri.conf.json 的 resources 引用），构建前必须先拉取。
+# - macOS 拆分 Arm / Intel 双 target；Linux 覆盖 x64 与 arm64（arm runner 仅公共仓库可用）。
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - release
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest' # Arm 架构 Mac（M1 及以上）。
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest' # Intel 架构 Mac。
+            args: '--target x86_64-apple-darwin'
+          - platform: 'ubuntu-22.04'
+            args: ''
+          - platform: 'ubuntu-22.04-arm' # 仅公共仓库提供该 runner。
+            args: ''
+          - platform: 'windows-latest'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 Linux 系统依赖（仅 Linux）
+        # 与矩阵里的 ubuntu 平台值保持一致；arm64 使用相同软件包名。
+        if: matrix.platform == 'ubuntu-22.04' || matrix.platform == 'ubuntu-22.04-arm'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - name: 安装 pnpm
+        # setup-node 的 cache: pnpm 依赖 pnpm 已在 PATH 中，必须放在其前一步。
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: 'pnpm'
+
+      - name: 安装 Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # 双 target 只有 macOS runner 用到，加 if 条件略微加速其余平台。
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: 缓存 Rust 构建产物
+        uses: swatinem/rust-cache@v2
+        with:
+          # 与 tauri 默认工程布局一致（src-tauri 为 Rust workspace）。
+          workspaces: './src-tauri -> target'
+
+      - name: 拉取内置 ECDICT 词典
+        # tauri.conf.json 的 resources 引用 resources/ecdict.db，缺失会导致打包失败。
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            pwsh ./scripts/fetch-ecdict.ps1
+          else
+            bash ./scripts/fetch-ecdict.sh
+          fi
+
+      - name: 安装前端依赖
+        # beforeBuildCommand（pnpm build）由 tauri-action 触发，这里只需装好依赖。
+        run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: app-v__VERSION__ # __VERSION__ 会被自动替换为应用版本号。
+          releaseName: 'QuailCard v__VERSION__'
+          releaseBody: 'See the assets to download this version and install.'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
