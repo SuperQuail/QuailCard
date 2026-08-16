@@ -200,7 +200,10 @@ fn sanitize_relative(relative: &str) -> Result<PathBuf, CommandError> {
     if relative.trim().is_empty() {
         return Err(CommandError::validation("路径不能为空"));
     }
-    if path.is_absolute()
+    // 反斜杠只在 Windows 上是分隔符，在 Unix 上会被当作普通字符绕过组件检查；
+    // 前端契约是仅提交 `/` 分隔的相对路径，因此跨平台统一拒绝 `\`。
+    if relative.contains('\\')
+        || path.is_absolute()
         || path.components().any(|component| {
             matches!(
                 component,
