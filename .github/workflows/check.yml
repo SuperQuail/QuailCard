@@ -39,6 +39,10 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: 拉取内置 ECDICT 词典
+        # Tauri 构建脚本会校验 resources/ecdict.db，clippy 与测试前必须准备该文件。
+        run: bash ./scripts/fetch-ecdict.sh
+
       - name: 安装前端依赖
         run: pnpm install --frozen-lockfile
 
