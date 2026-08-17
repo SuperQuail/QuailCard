@@ -138,7 +138,7 @@ onMounted(() => {
         <input
           id="palette-input"
           v-model="query"
-          class="h-12 min-w-0 flex-1 bg-transparent text-[14px] outline-none"
+          class="palette-input h-12 min-w-0 flex-1 bg-transparent text-[14px] outline-none"
           placeholder="搜索笔记、卡片，或输入命令…"
           @keydown.esc="emit('close')"
           @input="void refreshResults()"
@@ -177,3 +177,9 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.palette-input:focus-visible {
+  outline: none;
+}
+</style>
