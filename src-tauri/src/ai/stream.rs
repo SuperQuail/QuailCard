@@ -1,4 +1,9 @@
 use std::collections::BTreeMap;
+#[cfg(debug_assertions)]
+use std::{
+    io::Write,
+    sync::{Mutex, OnceLock},
+};
 
 use reqwest::Response;
 use serde_json::Value;
@@ -78,9 +83,58 @@ pub(super) async fn read_model_body(
 /// 在 Debug 构建中输出 AI 调用阶段日志。
 pub(crate) fn debug_stage(trace_id: &str, message: impl AsRef<str>) {
     #[cfg(debug_assertions)]
-    eprintln!("[QuailCard][AI trace={trace_id}] {}", message.as_ref());
+    {
+        let mut active = active_delta()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if active.take().is_some() {
+            eprintln!();
+        }
+        eprintln!("[QuailCard][AI trace={trace_id}] {}", message.as_ref());
+    }
     #[cfg(not(debug_assertions))]
     let _ = (trace_id, message);
+}
+
+#[cfg(debug_assertions)]
+#[derive(PartialEq, Eq)]
+struct ActiveDelta {
+    trace_id: String,
+    label: String,
+}
+
+#[cfg(debug_assertions)]
+/// 返回当前正在追加的增量日志，确保并发请求不会写到同一行。
+fn active_delta() -> &'static Mutex<Option<ActiveDelta>> {
+    static ACTIVE: OnceLock<Mutex<Option<ActiveDelta>>> = OnceLock::new();
+    ACTIVE.get_or_init(|| Mutex::new(None))
+}
+
+/// 将连续的模型增量追加到同一日志行，阶段或增量类型变化时才换行。
+pub(super) fn debug_delta(trace_id: &str, label: &str, content: &str) {
+    #[cfg(debug_assertions)]
+    {
+        let mut active = active_delta()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let continues_current_line = active
+            .as_ref()
+            .is_some_and(|current| current.trace_id == trace_id && current.label == label);
+        if !continues_current_line {
+            if active.is_some() {
+                eprintln!();
+            }
+            eprint!("[QuailCard][AI trace={trace_id}] {label}: ");
+            *active = Some(ActiveDelta {
+                trace_id: trace_id.to_string(),
+                label: label.to_string(),
+            });
+        }
+        eprint!("{content}");
+        let _ = std::io::stderr().flush();
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = (trace_id, label, content);
 }
 
 /// 从待处理缓冲区中提取并实时记录全部完整 SSE 事件。

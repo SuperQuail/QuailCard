@@ -4,8 +4,8 @@ use serde_json::Value;
 
 use super::super::ToolCallResult;
 use super::{
-    debug_stage, finish_calls, incomplete_stream, invalid_stream_response, sse_data_blocks,
-    stream_error, PendingCall,
+    debug_delta, debug_stage, finish_calls, incomplete_stream, invalid_stream_response,
+    sse_data_blocks, stream_error, PendingCall,
 };
 use crate::error::CommandError;
 
@@ -86,7 +86,7 @@ pub(super) fn log_anthropic_event(trace_id: &str, event: &Value) {
                 .and_then(Value::as_str)
                 .unwrap_or("");
             if !content.is_empty() {
-                debug_stage(trace_id, format!("{delta_type}: {content}"));
+                debug_delta(trace_id, delta_type, content);
             }
         }
         "message_stop" | "error" => debug_stage(trace_id, kind),

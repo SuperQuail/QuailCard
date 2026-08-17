@@ -4,8 +4,8 @@ use serde_json::Value;
 
 use super::super::ToolCallResult;
 use super::{
-    debug_stage, finish_calls, incomplete_stream, invalid_stream_response, sse_data_blocks,
-    stream_error, PendingCall,
+    debug_delta, debug_stage, finish_calls, incomplete_stream, invalid_stream_response,
+    sse_data_blocks, stream_error, PendingCall,
 };
 use crate::error::CommandError;
 
@@ -81,7 +81,7 @@ pub(super) fn log_openai_chat_event(trace_id: &str, event: &Value) {
         for key in ["reasoning_content", "reasoning", "content"] {
             if let Some(content) = delta.get(key).and_then(Value::as_str) {
                 if !content.is_empty() {
-                    debug_stage(trace_id, format!("{key}.delta: {content}"));
+                    debug_delta(trace_id, key, content);
                 }
             }
         }
@@ -93,7 +93,7 @@ pub(super) fn log_openai_chat_event(trace_id: &str, event: &Value) {
                 if let Some(arguments) = call.pointer("/function/arguments").and_then(Value::as_str)
                 {
                     if !arguments.is_empty() {
-                        debug_stage(trace_id, format!("tool.arguments.delta: {arguments}"));
+                        debug_delta(trace_id, "tool.arguments.delta", arguments);
                     }
                 }
             }
