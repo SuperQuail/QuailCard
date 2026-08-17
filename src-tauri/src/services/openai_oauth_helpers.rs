@@ -28,7 +28,7 @@ pub(super) const ISSUER: &str = "https://auth.openai.com";
 pub(super) const CALLBACK_URI: &str = "http://localhost:1455/auth/callback";
 pub(super) const DEVICE_REDIRECT_URI: &str = "https://auth.openai.com/deviceauth/callback";
 pub(super) const CALLBACK_ADDRESS: &str = "127.0.0.1:1455";
-pub(super) const USER_AGENT: &str = "QuailCard/0.1.0";
+pub(super) const USER_AGENT: &str = concat!("QuailCard/", env!("CARGO_PKG_VERSION"));
 
 /// OpenAI OAuth 令牌端点响应。
 #[derive(Deserialize)]

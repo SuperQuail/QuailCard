@@ -306,7 +306,10 @@ impl AiClient {
                 .bearer_auth(access_token)
                 .header("Accept", "text/event-stream")
                 .header("originator", "quailcard")
-                .header("User-Agent", "QuailCard/0.1.0")
+                .header(
+                    "User-Agent",
+                    concat!("QuailCard/", env!("CARGO_PKG_VERSION")),
+                )
                 .json(&openai_responses_multi_body(
                     config,
                     request,
@@ -403,7 +406,10 @@ impl AiClient {
             .bearer_auth(access_token)
             .header("Accept", "text/event-stream")
             .header("originator", "quailcard")
-            .header("User-Agent", "QuailCard/0.1.0")
+            .header(
+                "User-Agent",
+                concat!("QuailCard/", env!("CARGO_PKG_VERSION")),
+            )
             .json(&openai_responses_body(
                 config,
                 tool_request,
