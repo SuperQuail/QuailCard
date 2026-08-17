@@ -1,4 +1,5 @@
 mod ai;
+mod attachment_commands;
 mod commands;
 mod database;
 mod dictionary;
@@ -53,6 +54,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // Vault 图片附件
+            attachment_commands::get_vault_config,
+            attachment_commands::set_attachment_folder,
+            attachment_commands::import_note_attachment,
+            attachment_commands::read_note_attachment,
             // Vault 与笔记
             commands::open_vault,
             commands::get_vault_path,

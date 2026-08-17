@@ -8,7 +8,7 @@ use std::{
 use reqwest::Response;
 use serde_json::Value;
 
-use super::ToolCallResult;
+use super::{ToolArgumentError, ToolArguments, ToolCallResult};
 use crate::error::CommandError;
 
 #[path = "stream_anthropic.rs"]
@@ -187,27 +187,36 @@ fn finish_calls(calls: BTreeMap<usize, PendingCall>) -> Result<Vec<ToolCallResul
             let id = call.id.clone().or_else(|| Some(format!("call_{index}")));
             parse_pending_call(fallback_index, id, call)
         })
+        .map(Ok)
         .collect()
 }
 
 /// 解析一个已累积完成的工具调用参数。
-fn parse_pending_call(
-    index: usize,
-    id: Option<String>,
-    call: PendingCall,
-) -> Result<ToolCallResult, CommandError> {
+fn parse_pending_call(index: usize, id: Option<String>, call: PendingCall) -> ToolCallResult {
     let arguments = if call.arguments.trim().is_empty() {
         call.initial_arguments.unwrap_or_else(|| "{}".to_string())
     } else {
         call.arguments
     };
-    let arguments = serde_json::from_str(&arguments).map_err(|_| invalid_tool_arguments())?;
-    Ok(ToolCallResult {
+    let arguments = match serde_json::from_str(&arguments) {
+        Ok(value) => ToolArguments::Valid(value),
+        Err(error) => ToolArguments::Invalid(ToolArgumentError {
+            line: error.line(),
+            column: error.column(),
+            category: match error.classify() {
+                serde_json::error::Category::Io => "io",
+                serde_json::error::Category::Syntax => "syntax",
+                serde_json::error::Category::Data => "data",
+                serde_json::error::Category::Eof => "eof",
+            },
+        }),
+    };
+    ToolCallResult {
         id: id.unwrap_or_else(|| format!("call_{index}")),
         item_id: call.item_id,
         name: call.name,
         arguments,
-    })
+    }
 }
 
 /// 从完整响应正文中提取 SSE data 字段。
@@ -288,14 +297,6 @@ fn tool_not_called() -> CommandError {
     CommandError::provider("PROVIDER_TOOL_NOT_CALLED", "模型响应结束但没有调用工具")
 }
 
-/// 创建工具参数不是有效 JSON 的错误。
-fn invalid_tool_arguments() -> CommandError {
-    CommandError::provider(
-        "PROVIDER_TOOL_RESPONSE_INVALID",
-        "模型返回的工具参数不是有效 JSON",
-    )
-}
-
 /// 创建流式响应结构无法识别的错误。
 fn invalid_stream_response() -> CommandError {
     CommandError::provider(
@@ -318,18 +319,6 @@ fn missing_responses_call_id() -> CommandError {
         "PROVIDER_RESPONSE_INVALID",
         "ChatGPT Codex 函数调用缺少 item_id 或 call_id",
     )
-}
-
-/// 截断过长的失败事件日志，避免控制台刷屏。
-fn truncate_log(text: String) -> String {
-    const MAX_LOG_CHARS: usize = 2_000;
-    if text.chars().count() <= MAX_LOG_CHARS {
-        text
-    } else {
-        let mut truncated = text.chars().take(MAX_LOG_CHARS).collect::<String>();
-        truncated.push('…');
-        truncated
-    }
 }
 
 #[cfg(test)]

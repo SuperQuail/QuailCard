@@ -15,6 +15,9 @@ defineProps<{
   activeProviderId: string;
   vaultStatus: VaultStatus | null;
   aiGradingEnabled: boolean;
+  attachmentFolder: string;
+  attachmentFolderSaving: boolean;
+  attachmentFolderStatus: string;
 }>();
 
 const emit = defineEmits<{
@@ -25,6 +28,7 @@ const emit = defineEmits<{
   "set-active-provider": [providerId: string];
   "set-vault-password": [password: string];
   "update-ai-grading": [enabled: boolean];
+  "save-attachment-folder": [attachmentFolder: string];
 }>();
 
 type TabId = "general" | "model" | "vault";
@@ -72,10 +76,14 @@ const tabs: Array<{ id: TabId; label: string; icon: typeof Monitor }> = [
             :font-size="fontSize"
             :vault-path="vaultPath"
             :ai-grading-enabled="aiGradingEnabled"
+            :attachment-folder="attachmentFolder"
+            :attachment-folder-saving="attachmentFolderSaving"
+            :attachment-folder-status="attachmentFolderStatus"
             @update-theme="emit('update-theme', $event)"
             @update-font-size="emit('update-font-size', $event)"
             @change-vault="emit('change-vault')"
             @update-ai-grading="emit('update-ai-grading', $event)"
+            @save-attachment-folder="emit('save-attachment-folder', $event)"
           />
           <ModelSettings
             v-else-if="tab === 'model'"

@@ -97,14 +97,14 @@ fn summarizes_plain_text_error() {
 fn parses_openai_multiple_tool_calls() {
     let body = br#"{"choices":[{"message":{"tool_calls":[
         {"id":"call_1","type":"function","function":{"name":"lookup_words","arguments":"{\"words\":[\"a\"]}"}},
-        {"id":"call_2","type":"function","function":{"name":"emit_cards","arguments":"{\"cards\":[]}"}}
+        {"id":"call_2","type":"function","function":{"name":"emit_card","arguments":"{\"schema_version\":1}"}}
     ]}}]}"#;
     let calls = parse_openai_tool_calls(body).expect("解析工具调用失败");
     assert_eq!(calls.len(), 2);
     assert_eq!(calls[0].id, "call_1");
     assert_eq!(calls[0].name, "lookup_words");
-    assert_eq!(calls[0].arguments["words"][0], "a");
-    assert_eq!(calls[1].name, "emit_cards");
+    assert_eq!(calls[0].arguments.valid().unwrap()["words"][0], "a");
+    assert_eq!(calls[1].name, "emit_card");
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn parses_openai_multiple_tool_calls() {
 fn parses_anthropic_multiple_tool_calls() {
     let body = br#"{"content":[
         {"type":"tool_use","id":"toolu_1","name":"lookup_words","input":{"words":["a"]}},
-        {"type":"tool_use","id":"toolu_2","name":"emit_cards","input":{"cards":[]}}
+        {"type":"tool_use","id":"toolu_2","name":"emit_card","input":{"schema_version":1}}
     ]}"#;
     let calls = parse_anthropic_tool_calls(body).expect("解析工具调用失败");
     assert_eq!(calls.len(), 2);
@@ -126,14 +126,14 @@ fn parses_anthropic_multiple_tool_calls() {
 fn parses_openai_responses_multiple_calls() {
     let body = br#"{"output":[
         {"id":"fc_1","call_id":"call_1","type":"function_call","name":"lookup_words","arguments":"{\"words\":[\"a\"]}"},
-        {"id":"fc_2","call_id":"call_2","type":"function_call","name":"emit_cards","arguments":"{\"cards\":[]}"}
+        {"id":"fc_2","call_id":"call_2","type":"function_call","name":"emit_card","arguments":"{\"schema_version\":1}"}
     ]}"#;
     let calls = parse_openai_responses_calls(body).expect("解析工具调用失败");
     assert_eq!(calls.len(), 2);
     assert_eq!(calls[0].id, "call_1");
     assert_eq!(calls[0].item_id.as_deref(), Some("fc_1"));
     assert_eq!(calls[0].name, "lookup_words");
-    assert_eq!(calls[1].name, "emit_cards");
+    assert_eq!(calls[1].name, "emit_card");
 }
 
 #[test]
@@ -169,8 +169,8 @@ fn parses_openai_responses_stream_multiple_calls() {
         "data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_1\",\"call_id\":\"call_1\",\"type\":\"function_call\",\"name\":\"lookup_words\",\"arguments\":\"\"}}\n\n",
         "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_1\",\"delta\":\"{\\\"words\\\":[\\\"a\\\"]}\"}\n\n",
         "data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"fc_1\",\"call_id\":\"call_1\",\"type\":\"function_call\",\"name\":\"lookup_words\",\"arguments\":\"{\\\"words\\\":[\\\"a\\\"]}\"}}\n\n",
-        "data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_2\",\"call_id\":\"call_2\",\"type\":\"function_call\",\"name\":\"emit_cards\",\"arguments\":\"{\\\"cards\\\":[]}\"}}\n\n",
-        "data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"fc_2\",\"type\":\"function_call\",\"name\":\"emit_cards\",\"arguments\":\"{\\\"cards\\\":[]}\"}}\n\n",
+        "data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_2\",\"call_id\":\"call_2\",\"type\":\"function_call\",\"name\":\"emit_card\",\"arguments\":\"{\\\"schema_version\\\":1}\"}}\n\n",
+        "data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"fc_2\",\"type\":\"function_call\",\"name\":\"emit_card\",\"arguments\":\"{\\\"schema_version\\\":1}\"}}\n\n",
         "data: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n",
         "data: [DONE]\n\n"
     );
@@ -179,10 +179,55 @@ fn parses_openai_responses_stream_multiple_calls() {
     assert_eq!(calls[0].id, "call_1");
     assert_eq!(calls[0].item_id.as_deref(), Some("fc_1"));
     assert_eq!(calls[0].name, "lookup_words");
-    assert_eq!(calls[0].arguments["words"][0], "a");
-    assert_eq!(calls[1].name, "emit_cards");
+    assert_eq!(calls[0].arguments.valid().unwrap()["words"][0], "a");
+    assert_eq!(calls[1].name, "emit_card");
     let batch = parse_openai_responses_batch(body.as_bytes()).expect("解析 SSE 批次失败");
     assert_eq!(batch.continuation_items[1]["call_id"], "call_2");
+}
+
+#[test]
+/// 非流式批次保留合法调用并安全标记无效兄弟参数。
+fn preserves_valid_call_beside_malformed_arguments() {
+    let body = br#"{"choices":[{"message":{"tool_calls":[
+        {"id":"bad","type":"function","function":{"name":"emit_card","arguments":"{\"schema_version\":"}},
+        {"id":"good","type":"function","function":{"name":"emit_card","arguments":"{\"schema_version\":1}"}}
+    ]}}]}"#;
+    let calls = parse_openai_tool_calls(body).expect("解析容错批次失败");
+    let ToolArguments::Invalid(error) = &calls[0].arguments else {
+        panic!("首个调用应标记为无效")
+    };
+    assert_eq!(error.category, "eof");
+    assert_eq!(calls[1].arguments.valid().unwrap()["schema_version"], 1);
+}
+
+#[test]
+/// Responses 续传项保留标识但把无效参数净化为空对象。
+fn sanitizes_malformed_responses_continuation_item() {
+    let body = br#"{"output":[
+        {"id":"fc_bad","call_id":"call_bad","type":"function_call","name":"emit_card","arguments":"{\"schema_version\":"},
+        {"id":"fc_good","call_id":"call_good","type":"function_call","name":"emit_card","arguments":"{\"schema_version\":1}"}
+    ]}"#;
+    let batch = parse_openai_responses_batch(body).expect("解析 Responses 容错批次失败");
+    assert!(matches!(
+        batch.calls[0].arguments,
+        ToolArguments::Invalid(_)
+    ));
+    assert_eq!(batch.continuation_items[0]["call_id"], "call_bad");
+    assert_eq!(batch.continuation_items[0]["arguments"], "{}");
+    assert_eq!(
+        batch.calls[1].arguments.valid().unwrap()["schema_version"],
+        1
+    );
+}
+
+#[test]
+/// 单工具消费者仍会拒绝无效 JSON 参数。
+fn single_tool_consumer_rejects_malformed_arguments() {
+    let body = br#"{"choices":[{"message":{"tool_calls":[
+        {"id":"bad","type":"function","function":{"name":"emit_result","arguments":"{"}}
+    ]}}]}"#;
+    let error = parse_openai_tool_response(body, "emit_result").unwrap_err();
+    assert_eq!(error.code, "PROVIDER_TOOL_RESPONSE_INVALID");
 }
 
 #[test]

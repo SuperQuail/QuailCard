@@ -10,20 +10,32 @@ fn parses_openai_chat_tool_deltas() {
     );
     let calls = parse_openai_chat_stream(body.as_bytes()).expect("解析 OpenAI 流失败");
     assert_eq!(calls[0].name, "lookup_words");
-    assert_eq!(calls[0].arguments["words"][0], "speak");
+    assert_eq!(calls[0].arguments.valid().unwrap()["words"][0], "speak");
 }
 
 #[test]
 /// Anthropic 流能够拼接 input_json_delta 工具参数。
 fn parses_anthropic_tool_deltas() {
     let body = concat!(
-        "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"emit_cards\",\"input\":{}}}\n\n",
-        "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"cards\\\":[]}\"}}\n\n",
+        "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"emit_card\",\"input\":{}}}\n\n",
+        "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"schema_version\\\":1}\"}}\n\n",
         "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
     );
     let calls = parse_anthropic_stream(body.as_bytes()).expect("解析 Anthropic 流失败");
-    assert_eq!(calls[0].name, "emit_cards");
-    assert!(calls[0].arguments["cards"].is_array());
+    assert_eq!(calls[0].name, "emit_card");
+    assert_eq!(calls[0].arguments.valid().unwrap()["schema_version"], 1);
+}
+
+#[test]
+/// 流中一个无效调用不会丢弃同轮合法调用。
+fn preserves_valid_stream_call_beside_malformed_call() {
+    let body = concat!(
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"bad\",\"function\":{\"name\":\"emit_card\",\"arguments\":\"{\"}},{\"index\":1,\"id\":\"good\",\"function\":{\"name\":\"emit_card\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n",
+        "data: [DONE]\n\n"
+    );
+    let calls = parse_openai_chat_stream(body.as_bytes()).expect("解析多调用流失败");
+    assert!(matches!(calls[0].arguments, ToolArguments::Invalid(_)));
+    assert!(matches!(calls[1].arguments, ToolArguments::Valid(_)));
 }
 
 #[test]

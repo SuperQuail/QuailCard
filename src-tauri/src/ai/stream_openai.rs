@@ -90,12 +90,6 @@ pub(super) fn log_openai_chat_event(trace_id: &str, event: &Value) {
                 if let Some(name) = call.pointer("/function/name").and_then(Value::as_str) {
                     debug_stage(trace_id, format!("tool.start: {name}"));
                 }
-                if let Some(arguments) = call.pointer("/function/arguments").and_then(Value::as_str)
-                {
-                    if !arguments.is_empty() {
-                        debug_delta(trace_id, "tool.arguments.delta", arguments);
-                    }
-                }
             }
         }
         if let Some(reason) = choice.get("finish_reason").and_then(Value::as_str) {

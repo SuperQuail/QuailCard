@@ -6,7 +6,7 @@ import { resolveError } from "../../utils/errorMessage";
 import type { ReviewCard } from "../../domain/types";
 
 /**
- * AI 判定问答卡：按判定要点作答，AI 给出对错与反馈。
+ * AI 判定问答卡：用户独立作答，隐藏内部判定要点并由 AI 给出反馈。
  * 本地作答与判定状态随卡片 :key 重建自动重置。
  */
 const props = defineProps<{
@@ -65,9 +65,6 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleKeydown));
   <div class="text-center">
     <p class="text-[11px] tracking-wide text-ink-3 uppercase">AI 问答</p>
     <h2 class="note-title mt-4 !text-[22px]">{{ card.front }}</h2>
-    <div class="mt-3 flex flex-wrap items-center justify-center gap-1.5">
-      <span v-for="point in card.rubricPoints" :key="point" class="rounded-full bg-marker px-2.5 py-0.5 text-[10px] font-medium text-accent-strong">{{ point }}</span>
-    </div>
   </div>
 
   <div class="mt-8">

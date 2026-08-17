@@ -82,7 +82,6 @@ pub(super) fn log_anthropic_event(trace_id: &str, event: &Value) {
             let content = delta
                 .get("thinking")
                 .or_else(|| delta.get("text"))
-                .or_else(|| delta.get("partial_json"))
                 .and_then(Value::as_str)
                 .unwrap_or("");
             if !content.is_empty() {

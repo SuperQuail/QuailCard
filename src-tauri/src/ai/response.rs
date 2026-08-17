@@ -7,7 +7,7 @@ use super::stream::{
     parse_openai_responses_stream as parse_openai_responses_calls_sse, read_model_body,
     StreamProtocol,
 };
-use super::{ProviderProtocol, ToolCallBatch, ToolCallResult};
+use super::{ProviderProtocol, ToolArgumentError, ToolArguments, ToolCallBatch, ToolCallResult};
 use crate::{error::CommandError, models::ProviderConfig};
 
 const MAX_RESPONSE_BYTES: usize = 5 * 1024 * 1024;
@@ -163,7 +163,7 @@ pub(super) fn parse_openai_tool_calls(body: &[u8]) -> Result<Vec<ToolCallResult>
         .map(|(index, call)| {
             parse_call_arguments(index, call.id, call.function.name, call.function.arguments)
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Vec<_>>();
     if calls.is_empty() {
         return Err(tool_not_called());
     }
@@ -190,7 +190,7 @@ pub(super) fn parse_anthropic_tool_calls(body: &[u8]) -> Result<Vec<ToolCallResu
                 block.input.unwrap_or(Value::Null).to_string(),
             )
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Vec<_>>();
     if calls.is_empty() {
         return Err(tool_not_called());
     }
@@ -217,7 +217,7 @@ pub(super) fn parse_openai_responses_calls(
                     Some(call_id),
                     item.name.unwrap_or_default(),
                     item.arguments.unwrap_or_default(),
-                )?;
+                );
                 call.item_id = Some(item_id);
                 Ok::<ToolCallResult, CommandError>(call)
             })
@@ -268,6 +268,9 @@ fn enrich_responses_continuation_ids(
         object
             .entry("call_id")
             .or_insert_with(|| Value::String(call.id.clone()));
+        if matches!(call.arguments, ToolArguments::Invalid(_)) {
+            object.insert("arguments".to_string(), Value::String("{}".to_string()));
+        }
     }
     Ok(())
 }
@@ -288,7 +291,13 @@ fn select_expected_call(
     calls
         .into_iter()
         .find(|call| call.name == expected_tool)
-        .map(|call| call.arguments)
+        .map(|call| {
+            call.arguments
+                .valid()
+                .cloned()
+                .ok_or_else(invalid_tool_arguments)
+        })
+        .transpose()?
         .ok_or_else(|| {
             CommandError::provider(
                 "PROVIDER_TOOL_RESPONSE_INVALID",
@@ -303,18 +312,35 @@ fn parse_call_arguments(
     id: Option<String>,
     name: String,
     arguments: String,
-) -> Result<ToolCallResult, CommandError> {
+) -> ToolCallResult {
     let parsed = if arguments.trim().is_empty() {
-        Value::Object(Default::default())
+        ToolArguments::Valid(Value::Object(Default::default()))
     } else {
-        serde_json::from_str(&arguments).map_err(|_| invalid_tool_arguments())?
+        parse_arguments(&arguments)
     };
-    Ok(ToolCallResult {
+    ToolCallResult {
         id: id.unwrap_or_else(|| format!("call_{index}")),
         item_id: None,
         name,
         arguments: parsed,
-    })
+    }
+}
+
+/// 将单次参数解析失败压缩为不含原文的安全状态。
+fn parse_arguments(arguments: &str) -> ToolArguments {
+    match serde_json::from_str(arguments) {
+        Ok(value) => ToolArguments::Valid(value),
+        Err(error) => ToolArguments::Invalid(ToolArgumentError {
+            line: error.line(),
+            column: error.column(),
+            category: match error.classify() {
+                serde_json::error::Category::Io => "io",
+                serde_json::error::Category::Syntax => "syntax",
+                serde_json::error::Category::Data => "data",
+                serde_json::error::Category::Eof => "eof",
+            },
+        }),
+    }
 }
 
 /// 将网络层异常转换为可操作错误。

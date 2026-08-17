@@ -4,9 +4,8 @@ use serde_json::Value;
 
 use super::super::ToolCallResult;
 use super::{
-    debug_delta, debug_stage, incomplete_stream, invalid_stream_response,
-    missing_responses_call_id, parse_pending_call, sse_data_blocks, stream_error, tool_not_called,
-    truncate_log, PendingCall,
+    debug_stage, incomplete_stream, invalid_stream_response, missing_responses_call_id,
+    parse_pending_call, sse_data_blocks, stream_error, tool_not_called, PendingCall,
 };
 use crate::error::CommandError;
 
@@ -135,13 +134,7 @@ pub(crate) fn parse_openai_responses_stream(
                 }
             }
             "response.incomplete" => return Err(incomplete_stream()),
-            "response.failed" | "error" => {
-                eprintln!(
-                    "[QuailCard] ChatGPT Codex Responses 流失败事件：{}",
-                    truncate_log(data)
-                );
-                return Err(stream_error(&event));
-            }
+            "response.failed" | "error" => return Err(stream_error(&event)),
             _ => {}
         }
     }
@@ -163,7 +156,7 @@ pub(crate) fn parse_openai_responses_stream(
         .enumerate()
         .map(|(index, (_id, call))| {
             let call_id = call.id.clone();
-            parse_pending_call(index, call_id, call)
+            Ok(parse_pending_call(index, call_id, call))
         })
         .collect()
 }
@@ -200,12 +193,6 @@ pub(crate) fn openai_responses_output_items(body: &[u8]) -> Result<Vec<Value>, C
 /// 打印 OpenAI Responses 流中的事件阶段和内容增量。
 pub(super) fn log_responses_event(trace_id: &str, event: &Value) {
     let kind = event.get("type").and_then(Value::as_str).unwrap_or("event");
-    if let Some(delta) = event.get("delta").and_then(Value::as_str) {
-        if !delta.is_empty() {
-            debug_delta(trace_id, kind, delta);
-        }
-        return;
-    }
     if kind == "response.output_item.added" {
         let item_type = event
             .pointer("/item/type")

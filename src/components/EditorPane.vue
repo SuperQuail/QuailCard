@@ -7,7 +7,10 @@ import { EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { cardAnchorPlugin } from "../editor/cardAnchors";
 import { hideMarkersPlugin } from "../editor/hideMarkers";
+import { imageTransferExtension } from "../editor/imageTransfer";
+import { markdownImagePreview } from "../editor/markdownImages";
 import { markdownTheme } from "../editor/markdownTheme";
+import { resolveAttachmentDataUrl } from "../services/attachmentService";
 
 const props = defineProps<{
   notePath: string;
@@ -18,7 +21,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   "card-click": [cardId: string];
   "create-card": [selection: string];
-  "save-content": [content: string];
+  "save-content": [notePath: string, content: string];
 }>();
 
 /** 划词浮条：选区文本与屏幕坐标。 */
@@ -30,9 +33,13 @@ interface SelectionBar {
 
 const container = ref<HTMLElement | null>(null);
 const selectionBar = ref<SelectionBar | null>(null);
+const editorError = ref("");
 const themeCompartment = new Compartment();
+const imageCompartment = new Compartment();
 let view: EditorView | null = null;
 let saveTimer: number | undefined;
+let pendingSaveNotePath = "";
+let syncingDocument = false;
 
 /** 创建 CodeMirror 编辑器实例。 */
 function createEditor(): void {
@@ -48,10 +55,12 @@ function createEditor(): void {
       keymap.of([...defaultKeymap, ...historyKeymap]),
       markdown({ base: markdownLanguage }),
       themeCompartment.of(markdownTheme(props.dark)),
+      imageCompartment.of(markdownImagePreview(props.notePath, resolveAttachmentDataUrl)),
+      imageTransferExtension(() => props.notePath, (message) => { editorError.value = message; }),
       cardAnchorPlugin,
       hideMarkersPlugin,
       EditorView.updateListener.of((update) => {
-        if (update.docChanged) {
+        if (update.docChanged && !syncingDocument) {
           scheduleSave();
         }
       }),
@@ -75,11 +84,21 @@ function scheduleSave(): void {
   if (saveTimer) {
     window.clearTimeout(saveTimer);
   }
+  pendingSaveNotePath = props.notePath;
   saveTimer = window.setTimeout(() => {
-    if (view) {
-      emit("save-content", view.state.doc.toString());
-    }
+    flushSave();
   }, 600);
+}
+
+/** 立即提交待保存正文，并保留产生变更时的笔记身份。 */
+function flushSave(): void {
+  if (!saveTimer || !view || !pendingSaveNotePath) {
+    return;
+  }
+  window.clearTimeout(saveTimer);
+  saveTimer = undefined;
+  emit("save-content", pendingSaveNotePath, view.state.doc.toString());
+  pendingSaveNotePath = "";
 }
 
 /** 判断选区是否发生在编辑器内部。 */
@@ -154,12 +173,25 @@ watch(
   },
 );
 
-/** 外部内容变化：编辑器失焦时同步文档（例如重扫、拆卡锚点注入）。 */
+/** 笔记切换必定换文档；同笔记外部变化仅在失焦时同步。 */
 watch(
-  () => props.content,
-  (content) => {
-    if (view && !view.hasFocus && content !== view.state.doc.toString()) {
+  () => [props.notePath, props.content] as const,
+  ([notePath, content], [previousNotePath]) => {
+    if (!view) {
+      return;
+    }
+    const noteChanged = notePath !== previousNotePath;
+    if (noteChanged) {
+      flushSave();
+      editorError.value = "";
+    }
+    if ((noteChanged || !view.hasFocus) && content !== view.state.doc.toString()) {
+      syncingDocument = true;
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: content } });
+      syncingDocument = false;
+    }
+    if (noteChanged) {
+      view.dispatch({ effects: imageCompartment.reconfigure(markdownImagePreview(notePath, resolveAttachmentDataUrl)) });
     }
   },
 );
@@ -175,9 +207,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("mouseup", handleSelectionEnd);
   window.removeEventListener("mousedown", handleGlobalEvent);
   window.removeEventListener("keydown", handleGlobalEvent);
-  if (saveTimer) {
-    window.clearTimeout(saveTimer);
-  }
+  flushSave();
   view?.destroy();
   view = null;
 });
@@ -189,7 +219,8 @@ onBeforeUnmount(() => {
     <header class="sticky top-0 z-20 flex h-[47px] items-center gap-1.5 border-b border-hairline bg-bg-paper/92 px-4 text-[11px] text-ink-3 backdrop-blur-sm">
       <FileText :size="13" class="shrink-0" />
       <span class="truncate">{{ notePath }}</span>
-      <span class="flex shrink-0 items-center gap-1.5">
+      <span v-if="editorError" class="ml-auto truncate text-danger" :title="editorError">{{ editorError }}</span>
+      <span v-else class="flex shrink-0 items-center gap-1.5">
         <span class="size-1.5 rounded-full bg-success" />
         已保存
       </span>

@@ -45,9 +45,12 @@ export async function selectNote(path: string): Promise<void> {
 /** 保存笔记正文并同步摘要 mtime。 */
 export async function saveNoteContent(path: string, content: string): Promise<void> {
   const mtime = await backend.writeNote(path, content);
-  activeNoteMtime.value = mtime;
-  activeNoteContent.value = content;
-  savedAt.value = Date.now();
+  // 异步保存旧笔记完成时，不得覆盖已经切换到的新笔记正文。
+  if (activeNotePath.value === path) {
+    activeNoteMtime.value = mtime;
+    activeNoteContent.value = content;
+    savedAt.value = Date.now();
+  }
   const summary = notes.value.find((note) => note.path === path);
   if (summary) {
     summary.mtime = mtime;

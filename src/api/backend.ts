@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AiEvaluationResult,
+  AttachmentImage,
   BootstrapData,
   CardInput,
   ConnectionTestResult,
@@ -8,6 +9,8 @@ import type {
   FontSizeId,
   GenerationInput,
   GenerationResult,
+  ImportNoteAttachmentInput,
+  ImportedAttachment,
   NoteCard,
   NoteFile,
   NoteSummary,
@@ -21,6 +24,7 @@ import type {
   SearchResult,
   StudyStats,
   VaultStatus,
+  VaultConfig,
 } from "../domain/types";
 
 /** 判断当前是否运行在 Tauri WebView 内。 */
@@ -66,6 +70,26 @@ export function getVaultPath(): Promise<string | null> {
 /** 查询应用启动数据。 */
 export function getBootstrapData(): Promise<BootstrapData> {
   return call<BootstrapData>("get_bootstrap_data");
+}
+
+/** 查询当前 Vault 的附件配置。 */
+export function getVaultConfig(): Promise<VaultConfig> {
+  return call<VaultConfig>("get_vault_config");
+}
+
+/** 保存当前 Vault 的附件目录。 */
+export function setAttachmentFolder(attachmentFolder: string): Promise<VaultConfig> {
+  return call<VaultConfig>("set_attachment_folder", { attachmentFolder });
+}
+
+/** 将图片写入当前 Vault 并返回相对 Markdown 路径。 */
+export function importNoteAttachment(input: ImportNoteAttachmentInput): Promise<ImportedAttachment> {
+  return call<ImportedAttachment>("import_note_attachment", { input });
+}
+
+/** 读取当前笔记引用的本地图片。 */
+export function readNoteAttachment(notePath: string, source: string): Promise<AttachmentImage> {
+  return call<AttachmentImage>("read_note_attachment", { input: { notePath, source } });
 }
 
 /** 查询全部笔记摘要。 */

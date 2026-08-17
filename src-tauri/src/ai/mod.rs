@@ -8,7 +8,7 @@ mod stream;
 pub(crate) use client::normalize_base_url;
 pub use client::AiClient;
 pub use evaluation::{build_evaluation_prompt, evaluation_tool, parse_evaluation_response};
-pub use generation::{build_generation_prompt, generation_tools, parse_generation_response};
+pub use generation::{build_generation_prompt, generation_tools, GenerationSession};
 pub(crate) use stream::debug_stage;
 
 use crate::{error::CommandError, models::GenerationImage};
@@ -28,7 +28,41 @@ pub struct ToolCallResult {
     pub id: String,
     pub item_id: Option<String>,
     pub name: String,
-    pub arguments: Value,
+    pub arguments: ToolArguments,
+}
+
+/// 工具参数 JSON 的安全解析状态，不保留无效原文。
+#[derive(Debug, Clone)]
+pub enum ToolArguments {
+    /// 参数是完整有效的 JSON 值。
+    Valid(Value),
+    /// 参数不是有效 JSON，仅保留定位和分类信息。
+    Invalid(ToolArgumentError),
+}
+
+impl ToolArguments {
+    /// 返回有效参数，供严格单工具消费者拒绝无效调用。
+    pub fn valid(&self) -> Option<&Value> {
+        match self {
+            Self::Valid(value) => Some(value),
+            Self::Invalid(_) => None,
+        }
+    }
+
+    /// 返回可安全跨协议回放的参数，无效原文统一替换为空对象。
+    pub fn replay_value(&self) -> Value {
+        self.valid()
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}))
+    }
+}
+
+/// 无效工具参数的安全诊断，不包含模型返回的原始载荷。
+#[derive(Debug, Clone)]
+pub struct ToolArgumentError {
+    pub line: usize,
+    pub column: usize,
+    pub category: &'static str,
 }
 
 /// 一轮模型响应中的工具调用及供应商专用续传项。
@@ -46,7 +80,7 @@ pub enum ToolMessage {
         id: String,
         item_id: Option<String>,
         name: String,
-        arguments: Value,
+        arguments: ToolArguments,
     },
     /// 工具执行完成后返回给模型的结果文本。
     ToolResult { id: String, content: String },

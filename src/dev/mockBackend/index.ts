@@ -1,5 +1,6 @@
 import type { BootstrapData } from "../../domain/types";
 import * as cardsDomain from "./cards";
+import * as attachmentsDomain from "./attachments";
 import * as notesDomain from "./notes";
 import * as providersDomain from "./providers";
 import {
@@ -60,6 +61,16 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
       return [...recentVaults] as T;
     case "get_vault_path":
       return vaultPath as T;
+    case "get_vault_config":
+      return attachmentsDomain.getVaultConfig() as T;
+    case "set_attachment_folder":
+      return attachmentsDomain.setAttachmentFolder(String(args?.attachmentFolder ?? "")) as T;
+    case "import_note_attachment":
+      return attachmentsDomain.importNoteAttachment(args?.input as Parameters<typeof attachmentsDomain.importNoteAttachment>[0]) as T;
+    case "read_note_attachment": {
+      const input = args?.input as { notePath: string; source: string };
+      return attachmentsDomain.readNoteAttachment(input.notePath, input.source) as T;
+    }
     case "list_notes":
       return notesDomain.noteSummaries() as T;
     case "read_note":

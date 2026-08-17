@@ -246,6 +246,41 @@ fn builds_multimodal_request_bodies() {
 }
 
 #[test]
+/// 多工具请求允许 OpenAI 并行调用且 Anthropic 不禁用并行工具。
+fn enables_parallel_multi_tool_calls() {
+    let tools = vec![test_tool()];
+    let request = MultiToolRequest {
+        trace_id: "trace",
+        turn: 1,
+        system_prompt: "system",
+        user_prompt: "user",
+        images: &[],
+        tools: &tools,
+        history: &[],
+        max_tokens: 100,
+        timeout: Duration::from_secs(5),
+    };
+    let openai = openai_multi_body(
+        &test_config("OpenAI Compatible", "https://example.com/v1"),
+        &request,
+        false,
+    );
+    let responses = openai_responses_multi_body(
+        &test_config("OpenAI Compatible", "https://example.com/v1"),
+        &request,
+        false,
+    );
+    let anthropic = anthropic_multi_body(
+        &test_config("Anthropic Messages", "https://example.com/v1"),
+        &request,
+        false,
+    );
+    assert_eq!(openai["parallel_tool_calls"], true);
+    assert_eq!(responses["parallel_tool_calls"], true);
+    assert!(anthropic.get("tool_choice").is_none());
+}
+
+#[test]
 /// 公网 HTTP 和携带查询参数的地址会被拒绝。
 fn rejects_unsafe_base_urls() {
     assert!(normalize_base_url("http://example.com/v1").is_err());

@@ -25,7 +25,7 @@ pub(super) fn openai_multi_body(
         "model": config.model,
         "messages": messages,
         "tools": request.tools.iter().map(openai_tool_json).collect::<Vec<_>>(),
-        "parallel_tool_calls": false,
+        "parallel_tool_calls": true,
         "max_tokens": request.max_tokens,
         "temperature": 0.2,
         "stream": true
@@ -66,7 +66,7 @@ pub(super) fn openai_responses_multi_body(
         "instructions": system_prompt(request.system_prompt, retry_missing_tool),
         "input": input,
         "tools": request.tools.iter().map(responses_tool_json).collect::<Vec<_>>(),
-        "parallel_tool_calls": false,
+        "parallel_tool_calls": true,
         "store": false,
         "stream": true
     })
@@ -165,6 +165,7 @@ fn openai_history_messages(history: &[ToolMessage]) -> Vec<Value> {
                 arguments,
                 ..
             } => {
+                let arguments = arguments.replay_value();
                 pending_calls.push(json!({
                     "id": id,
                     "type": "function",
@@ -196,6 +197,7 @@ fn openai_history_messages(history: &[ToolMessage]) -> Vec<Value> {
 fn anthropic_history_messages(history: &[ToolMessage]) -> Vec<Value> {
     let mut messages = Vec::new();
     let mut pending_calls = Vec::new();
+    let mut pending_results = Vec::new();
     for message in history {
         match message {
             ToolMessage::AssistantCall {
@@ -204,11 +206,15 @@ fn anthropic_history_messages(history: &[ToolMessage]) -> Vec<Value> {
                 arguments,
                 ..
             } => {
+                if !pending_results.is_empty() {
+                    messages.push(json!({ "role": "user", "content": pending_results }));
+                    pending_results = Vec::new();
+                }
                 pending_calls.push(json!({
                     "type": "tool_use",
                     "id": id,
                     "name": name,
-                    "input": arguments
+                    "input": arguments.replay_value()
                 }));
             }
             ToolMessage::ToolResult { id, content } => {
@@ -219,13 +225,17 @@ fn anthropic_history_messages(history: &[ToolMessage]) -> Vec<Value> {
                     }));
                     pending_calls = Vec::new();
                 }
-                messages.push(json!({
-                    "role": "user",
-                    "content": [{ "type": "tool_result", "tool_use_id": id, "content": content }]
-                }));
+                pending_results
+                    .push(json!({ "type": "tool_result", "tool_use_id": id, "content": content }));
             }
             ToolMessage::ProviderItem { .. } => {}
         }
+    }
+    if !pending_calls.is_empty() {
+        messages.push(json!({ "role": "assistant", "content": pending_calls }));
+    }
+    if !pending_results.is_empty() {
+        messages.push(json!({ "role": "user", "content": pending_results }));
     }
     messages
 }
@@ -241,6 +251,7 @@ fn responses_history_items(history: &[ToolMessage]) -> Vec<Value> {
                 name,
                 arguments,
             } => {
+                let arguments = arguments.replay_value();
                 items.push(json!({
                     "type": "function_call",
                     "id": item_id.as_deref().unwrap_or(id),
@@ -357,7 +368,7 @@ mod tests {
                 id: "call_1".to_string(),
                 item_id: Some("fc_1".to_string()),
                 name: "lookup_words".to_string(),
-                arguments: json!({ "words": ["speak"] }),
+                arguments: super::super::ToolArguments::Valid(json!({ "words": ["speak"] })),
             },
             ToolMessage::ToolResult {
                 id: "call_1".to_string(),
@@ -400,5 +411,36 @@ mod tests {
         assert_eq!(items[0]["type"], "reasoning");
         assert_eq!(items[1]["call_id"], "call_1");
         assert_eq!(items[2]["type"], "function_call_output");
+    }
+
+    #[test]
+    /// 无效参数跨协议历史统一回放为空对象且保留精确工具错误。
+    fn safely_replays_invalid_arguments() {
+        let history = vec![
+            ToolMessage::AssistantCall {
+                id: "call_bad".to_string(),
+                item_id: Some("fc_bad".to_string()),
+                name: "emit_card".to_string(),
+                arguments: super::super::ToolArguments::Invalid(super::super::ToolArgumentError {
+                    line: 1,
+                    column: 4,
+                    category: "eof",
+                }),
+            },
+            ToolMessage::ToolResult {
+                id: "call_bad".to_string(),
+                content: "{\"ok\":false,\"error\":{\"code\":\"INVALID_JSON\"}}".to_string(),
+            },
+        ];
+        let chat = openai_history_messages(&history);
+        let anthropic = anthropic_history_messages(&history);
+        let responses = responses_history_items(&history);
+        assert_eq!(chat[0]["tool_calls"][0]["function"]["arguments"], "{}");
+        assert_eq!(anthropic[0]["content"][0]["input"], json!({}));
+        assert_eq!(responses[0]["arguments"], "{}");
+        assert!(responses[1]["output"]
+            .as_str()
+            .unwrap()
+            .contains("INVALID_JSON"));
     }
 }

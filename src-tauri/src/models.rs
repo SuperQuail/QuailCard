@@ -35,6 +35,46 @@ pub struct NoteFile {
     pub mtime: i64,
 }
 
+/// 当前 Vault 独立保存的文件附件配置。
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultConfig {
+    pub attachment_folder: String,
+}
+
+/// 导入笔记图片附件时使用的完整输入。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportNoteAttachmentInput {
+    pub note_path: String,
+    pub file_name: String,
+    pub mime_type: String,
+    pub data_base64: String,
+}
+
+/// 导入成功后可直接写入 Markdown 的相对图片路径。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedAttachment {
+    pub markdown_path: String,
+}
+
+/// 从笔记中的 Markdown 图片来源读取附件。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadNoteAttachmentInput {
+    pub note_path: String,
+    pub source: String,
+}
+
+/// 经实际文件签名验证后返回的图片载荷。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentImage {
+    pub mime_type: String,
+    pub data_base64: String,
+}
+
 /// 保存笔记文件的输入：内容写盘并同步索引。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

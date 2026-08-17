@@ -5,6 +5,12 @@ use std::{
 
 use crate::error::CommandError;
 
+mod attachments;
+mod config;
+
+#[cfg(test)]
+mod attachments_tests;
+
 /// 管理 Vault 根目录并封装全部文件操作。
 ///
 /// 前端只提交 Vault 相对路径；所有路径先净化再约束在根目录内，

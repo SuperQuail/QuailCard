@@ -45,6 +45,26 @@ const baseTheme = EditorView.theme({
   ".cm-placeholder": {
     color: "var(--qc-ink-3)",
   },
+  ".qc-image-preview": {
+    display: "inline-flex",
+    maxWidth: "100%",
+    minHeight: "44px",
+    alignItems: "center",
+    color: "var(--qc-ink-3)",
+    fontFamily: "var(--font-ui)",
+    fontSize: "12px",
+  },
+  ".qc-image-preview img": {
+    display: "block",
+    maxWidth: "min(100%, 720px)",
+    maxHeight: "480px",
+    borderRadius: "6px",
+    border: "1px solid var(--qc-hairline)",
+    objectFit: "contain",
+  },
+  ".qc-image-preview.is-error": {
+    color: "var(--qc-danger)",
+  },
 });
 
 /** Markdown 语法高亮：标题放大、加粗倾斜生效、语法符号淡化为半透明。 */

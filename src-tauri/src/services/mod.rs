@@ -1,3 +1,4 @@
+mod ai_generation;
 mod ai_tasks;
 mod openai_oauth;
 mod openai_oauth_credential;

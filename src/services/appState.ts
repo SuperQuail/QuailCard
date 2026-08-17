@@ -29,6 +29,7 @@ export async function initialize(): Promise<void> {
     reviewStore.aiGradingEnabled.value = data.aiGradingEnabled;
     uiStore.fontSize.value = data.fontSize;
     vaultStore.vaultStatus.value = status;
+    await vaultStore.loadVaultConfig();
     uiStore.applyFontSize();
     uiStore.initialized.value = true;
   } catch (error) {

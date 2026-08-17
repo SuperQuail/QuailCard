@@ -160,6 +160,30 @@ export interface BootstrapData {
   aiGradingEnabled: boolean;
 }
 
+/** 当前 Vault 的文件级配置。 */
+export interface VaultConfig {
+  attachmentFolder: string;
+}
+
+/** 导入图片附件的命令输入。 */
+export interface ImportNoteAttachmentInput {
+  notePath: string;
+  fileName: string;
+  mimeType: string;
+  dataBase64: string;
+}
+
+/** 导入完成后可写入 Markdown 的相对路径。 */
+export interface ImportedAttachment {
+  markdownPath: string;
+}
+
+/** 读取到的图片附件载荷。 */
+export interface AttachmentImage {
+  mimeType: string;
+  dataBase64: string;
+}
+
 /** 界面字号档位。 */
 export type FontSizeId = "compact" | "standard" | "comfortable";
 

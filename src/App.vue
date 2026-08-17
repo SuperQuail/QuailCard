@@ -26,13 +26,13 @@ import { activeNoteContent, activeNotePath, extraFolders, findNote, notes, renam
 import { activeProviderId, providers, setActiveProvider } from "./services/stores/providerStore";
 import { aiGradingEnabled, setAiGradingEnabled, studyStats } from "./services/stores/reviewStore";
 import { applyFontSize, applyTheme, fontSize, initialized, setFontSize, theme, toggleTheme } from "./services/stores/uiStore";
-import { recentVaults, setVaultPassword, vaultPath, vaultStatus } from "./services/stores/vaultStore";
+import { attachmentFolderSaving, attachmentFolderStatus, recentVaults, setAttachmentFolder, setVaultPassword, vaultConfig, vaultPath, vaultStatus } from "./services/stores/vaultStore";
 
 const { toastMessage, showToast } = useToast();
 
 /** 布局开关：文件树与卡片面板的展开状态。 */
 const treeOpen = ref(true);
-const panelOpen = ref(true);
+const panelOpen = ref(false);
 const paletteOpen = ref(false);
 const captureOpen = ref(false);
 const settingsOpen = ref(false);
@@ -230,7 +230,7 @@ watch(() => theme.value, applyTheme);
           :dark="theme === 'dark'"
           @card-click="activeCardId = $event"
           @create-card="openCardEditorFromSelection"
-          @save-content="(content) => void saveNoteContent(activeNotePath ?? '', content)"
+          @save-content="(notePath, content) => void saveNoteContent(notePath, content)"
         />
         <div v-else class="flex h-full items-center justify-center text-[13px] text-ink-3">
           选择或创建一篇笔记
@@ -296,6 +296,9 @@ watch(() => theme.value, applyTheme);
       :active-provider-id="activeProviderId"
       :vault-status="vaultStatus"
       :ai-grading-enabled="aiGradingEnabled"
+      :attachment-folder="vaultConfig.attachmentFolder"
+      :attachment-folder-saving="attachmentFolderSaving"
+      :attachment-folder-status="attachmentFolderStatus"
       @close="settingsOpen = false"
       @update-theme="theme = $event"
       @update-font-size="(size) => void setFontSize(size)"
@@ -303,6 +306,7 @@ watch(() => theme.value, applyTheme);
       @set-active-provider="(id) => void setActiveProvider(id)"
       @set-vault-password="(password) => void setVaultPassword(password)"
       @update-ai-grading="(enabled) => void setAiGradingEnabled(enabled)"
+      @save-attachment-folder="(folder) => void setAttachmentFolder(folder)"
     />
 
     <AiSplitDialog

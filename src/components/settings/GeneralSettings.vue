@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { FolderOpen, Moon, Sun } from "@lucide/vue";
+import { FolderOpen, Moon, Save, Sun } from "@lucide/vue";
+import { ref, watch } from "vue";
 import type { FontSizeId, ThemeId } from "../../domain/types";
 
 /** 通用设置：Vault 路径、外观（主题/字号）与复习偏好。全部动作上抛，组件不自持业务。 */
-defineProps<{
+const props = defineProps<{
   theme: ThemeId;
   fontSize: FontSizeId;
   vaultPath: string;
   aiGradingEnabled: boolean;
+  attachmentFolder: string;
+  attachmentFolderSaving: boolean;
+  attachmentFolderStatus: string;
 }>();
 
 const emit = defineEmits<{
@@ -15,7 +19,15 @@ const emit = defineEmits<{
   "update-font-size": [size: FontSizeId];
   "change-vault": [];
   "update-ai-grading": [enabled: boolean];
+  "save-attachment-folder": [attachmentFolder: string];
 }>();
+
+const attachmentFolderDraft = ref(props.attachmentFolder);
+
+/** Vault 配置变化时替换草稿，避免跨 Vault 串值。 */
+watch(() => props.attachmentFolder, (value) => {
+  attachmentFolderDraft.value = value;
+});
 
 /** 字号档位选项（紧凑/标准/舒适）。 */
 const fontSizeOptions: Array<{ id: FontSizeId; label: string }> = [
@@ -38,6 +50,19 @@ const fontSizeOptions: Array<{ id: FontSizeId; label: string }> = [
         </p>
       </div>
       <button type="button" class="ghost-btn shrink-0 border border-hairline" @click="emit('change-vault')">更换…</button>
+    </div>
+    <div class="setting-row items-start">
+      <div class="min-w-0 flex-1">
+        <label for="attachment-folder" class="text-[12px] font-medium">图片附件文件夹</label>
+        <p class="mt-0.5 text-[11px] text-ink-3">相对于当前 Vault，粘贴和拖入的图片将保存到这里</p>
+        <div class="mt-2 flex items-center gap-2">
+          <input id="attachment-folder" v-model="attachmentFolderDraft" class="field-input" placeholder="attachments" @keydown.enter="emit('save-attachment-folder', attachmentFolderDraft)" />
+          <button type="button" class="primary-btn shrink-0" :disabled="attachmentFolderSaving || !attachmentFolderDraft.trim()" @click="emit('save-attachment-folder', attachmentFolderDraft)">
+            <Save :size="12" />{{ attachmentFolderSaving ? "保存中" : "保存" }}
+          </button>
+        </div>
+        <p v-if="attachmentFolderStatus" class="mt-1.5 text-[11px]" :class="attachmentFolderStatus === '已保存' ? 'text-success' : 'text-danger'">{{ attachmentFolderStatus }}</p>
+      </div>
     </div>
   </section>
 
