@@ -1,0 +1,68 @@
+name: build Linux
+
+# 手动构建 Linux 安装包，不创建 Release；适合 Fork 后按需生成 artifact。
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: 构建架构
+        required: true
+        default: x64
+        type: choice
+        options:
+          - x64
+          - arm64
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    name: Linux ${{ inputs.architecture }}
+    runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-22.04-arm' || 'ubuntu-22.04' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 Tauri 系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: 安装 Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 Rust 构建产物
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: 拉取内置 ECDICT 词典
+        run: bash ./scripts/fetch-ecdict.sh
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建 Linux 安装包
+        run: pnpm tauri build
+
+      - name: 上传 Linux 安装包
+        uses: actions/upload-artifact@v6
+        with:
+          name: quailcard-linux-${{ inputs.architecture }}
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+          if-no-files-found: error
+          retention-days: 14
