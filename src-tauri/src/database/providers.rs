@@ -279,7 +279,7 @@ mod tests {
             .await
             .expect("创建测试数据库失败");
         let providers = database.list_providers().await.expect("查询供应商失败");
-        assert_eq!(providers.len(), 3);
+        assert_eq!(providers.len(), 4);
         assert!(providers
             .iter()
             .all(|provider| provider.status == "untested"));
@@ -294,6 +294,14 @@ mod tests {
         assert_eq!(subscription.provider_type, "openai_subscription");
         assert_eq!(subscription.model, "gpt-5.5");
         assert!(subscription.supports_vision);
+        let opencode_go = providers
+            .iter()
+            .find(|provider| provider.id == "opencode_go")
+            .expect("缺少 OpenCode Go 供应商");
+        assert_eq!(opencode_go.protocol, "OpenAI Compatible");
+        assert_eq!(opencode_go.model, "deepseek-v4-flash");
+        assert_eq!(opencode_go.base_url, "https://opencode.ai/zen/go/v1");
+        assert!(!opencode_go.supports_vision);
         assert_eq!(
             database
                 .get_active_provider_id()

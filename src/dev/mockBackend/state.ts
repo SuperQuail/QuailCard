@@ -54,6 +54,7 @@ export const recentVaults: string[] = ["D:\QuailVault", "D:\Documents\MyKnowledg
 export const mockProviders: MockProvider[] = [
   { id: "openai", name: "OpenAI", shortCode: "OA", protocol: "OpenAI Compatible", model: "gpt-4.1-mini", baseUrl: "https://api.openai.com/v1", hasApiKey: true, hasCredential: true, authType: "api_key", oauthAccountId: null, providerType: "api", supportsVision: true, status: "connected" },
   { id: "anthropic", name: "Anthropic", shortCode: "AN", protocol: "Anthropic Messages", model: "claude-sonnet-4-5", baseUrl: "https://api.anthropic.com", hasApiKey: false, hasCredential: false, authType: null, oauthAccountId: null, providerType: "api", supportsVision: true, status: "untested" },
+  { id: "opencode_go", name: "OpenCode Go", shortCode: "OG", protocol: "OpenAI Compatible", model: "deepseek-v4-flash", baseUrl: "https://opencode.ai/zen/go/v1", hasApiKey: false, hasCredential: false, authType: null, oauthAccountId: null, providerType: "api", supportsVision: false, status: "untested" },
   { id: "openai_subscription", name: "OpenAI 订阅", shortCode: "OS", protocol: "OpenAI Compatible", model: "gpt-5.5", baseUrl: "https://chatgpt.com/backend-api/codex/responses", hasApiKey: false, hasCredential: false, authType: null, oauthAccountId: null, providerType: "openai_subscription", supportsVision: true, status: "untested" },
 ];
 
