@@ -26,7 +26,8 @@ import { activeNoteContent, activeNotePath, extraFolders, findNote, notes, renam
 import { activeProviderId, providers, setActiveProvider } from "./services/stores/providerStore";
 import { aiGradingEnabled, setAiGradingEnabled, studyStats } from "./services/stores/reviewStore";
 import { applyFontSize, applyTheme, fontSize, initialized, setFontSize, theme, toggleTheme } from "./services/stores/uiStore";
-import { attachmentFolderSaving, attachmentFolderStatus, recentVaults, setAttachmentFolder, setVaultPassword, vaultConfig, vaultPath, vaultStatus } from "./services/stores/vaultStore";
+import { attachmentFolderSaving, attachmentFolderStatus, dataLocations, recentVaults, setAttachmentFolder, setVaultPassword, vaultConfig, vaultPath, vaultStatus } from "./services/stores/vaultStore";
+import { revealDataFolder } from "./api/backend";
 
 const { toastMessage, showToast } = useToast();
 
@@ -74,6 +75,21 @@ const { handleSelectNote, handleQuickCapture, handleDeleteSelection } = useNoteA
 async function submitQuickCapture(title: string, folder: string, body: string): Promise<void> {
   if (await handleQuickCapture(title, folder, body)) {
     captureOpen.value = false;
+  }
+}
+
+/** 从设置中打开最近 Vault：复用开库流程并收起设置层。 */
+async function openRecentVault(path: string): Promise<void> {
+  settingsOpen.value = false;
+  await openVault(path);
+}
+
+/** 在系统文件管理器中打开数据目录，失败时以 toast 提示。 */
+async function handleRevealDataFolder(target: "cards" | "config"): Promise<void> {
+  try {
+    await revealDataFolder(target);
+  } catch (error) {
+    showToast((error as { message?: string })?.message ?? "无法打开文件夹");
   }
 }
 
@@ -292,6 +308,7 @@ watch(() => theme.value, applyTheme);
       :theme="theme"
       :font-size="fontSize"
       :vault-path="vaultPath ?? ''"
+      :recent-vaults="recentVaults"
       :providers="providers"
       :active-provider-id="activeProviderId"
       :vault-status="vaultStatus"
@@ -299,14 +316,17 @@ watch(() => theme.value, applyTheme);
       :attachment-folder="vaultConfig.attachmentFolder"
       :attachment-folder-saving="attachmentFolderSaving"
       :attachment-folder-status="attachmentFolderStatus"
+      :data-locations="dataLocations"
       @close="settingsOpen = false"
       @update-theme="theme = $event"
       @update-font-size="(size) => void setFontSize(size)"
       @change-vault="leaveVault"
+      @open-recent-vault="(path) => void openRecentVault(path)"
       @set-active-provider="(id) => void setActiveProvider(id)"
       @set-vault-password="(password) => void setVaultPassword(password)"
       @update-ai-grading="(enabled) => void setAiGradingEnabled(enabled)"
       @save-attachment-folder="(folder) => void setAttachmentFolder(folder)"
+      @reveal-data-folder="(target) => void handleRevealDataFolder(target)"
     />
 
     <AiSplitDialog

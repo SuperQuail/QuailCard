@@ -1,16 +1,25 @@
 <script setup lang="ts">
-import { KeyRound, Monitor, Server, X } from "@lucide/vue";
+import { KeyRound, Monitor, Palette, Server, X } from "@lucide/vue";
 import { ref } from "vue";
+import AppearanceSettings from "./settings/AppearanceSettings.vue";
 import GeneralSettings from "./settings/GeneralSettings.vue";
 import ModelSettings from "./settings/ModelSettings.vue";
 import VaultSecuritySettings from "./settings/VaultSecuritySettings.vue";
-import type { FontSizeId, ProviderSummary, ThemeId, VaultStatus } from "../domain/types";
+import type {
+  DataFolderTarget,
+  DataLocations,
+  FontSizeId,
+  ProviderSummary,
+  ThemeId,
+  VaultStatus,
+} from "../domain/types";
 
-/** 设置覆盖层：只负责 tab 导航与三个设置面板的装配，业务全部在子组件与 store。 */
+/** 设置覆盖层：只负责 tab 导航与四个设置面板的装配，业务全部在子组件与 store。 */
 defineProps<{
   theme: ThemeId;
   fontSize: FontSizeId;
   vaultPath: string;
+  recentVaults: string[];
   providers: ProviderSummary[];
   activeProviderId: string;
   vaultStatus: VaultStatus | null;
@@ -18,6 +27,7 @@ defineProps<{
   attachmentFolder: string;
   attachmentFolderSaving: boolean;
   attachmentFolderStatus: string;
+  dataLocations: DataLocations;
 }>();
 
 const emit = defineEmits<{
@@ -25,18 +35,21 @@ const emit = defineEmits<{
   "update-theme": [theme: ThemeId];
   "update-font-size": [size: FontSizeId];
   "change-vault": [];
+  "open-recent-vault": [path: string];
   "set-active-provider": [providerId: string];
   "set-vault-password": [password: string];
   "update-ai-grading": [enabled: boolean];
   "save-attachment-folder": [attachmentFolder: string];
+  "reveal-data-folder": [target: DataFolderTarget];
 }>();
 
-type TabId = "general" | "model" | "vault";
+type TabId = "general" | "appearance" | "model" | "vault";
 const tab = ref<TabId>("general");
 
 /** 设置类别定义：导航渲染与 tab 切换共用。 */
 const tabs: Array<{ id: TabId; label: string; icon: typeof Monitor }> = [
   { id: "general", label: "通用", icon: Monitor },
+  { id: "appearance", label: "外观", icon: Palette },
   { id: "model", label: "模型", icon: Server },
   { id: "vault", label: "安全", icon: KeyRound },
 ];
@@ -72,18 +85,25 @@ const tabs: Array<{ id: TabId; label: string; icon: typeof Monitor }> = [
         <div class="mx-auto w-full max-w-[640px] px-8 pt-6 pb-16">
           <GeneralSettings
             v-if="tab === 'general'"
-            :theme="theme"
-            :font-size="fontSize"
             :vault-path="vaultPath"
+            :recent-vaults="recentVaults"
             :ai-grading-enabled="aiGradingEnabled"
             :attachment-folder="attachmentFolder"
             :attachment-folder-saving="attachmentFolderSaving"
             :attachment-folder-status="attachmentFolderStatus"
-            @update-theme="emit('update-theme', $event)"
-            @update-font-size="emit('update-font-size', $event)"
+            :data-locations="dataLocations"
             @change-vault="emit('change-vault')"
+            @open-recent-vault="emit('open-recent-vault', $event)"
             @update-ai-grading="emit('update-ai-grading', $event)"
             @save-attachment-folder="emit('save-attachment-folder', $event)"
+            @reveal-data-folder="emit('reveal-data-folder', $event)"
+          />
+          <AppearanceSettings
+            v-else-if="tab === 'appearance'"
+            :theme="theme"
+            :font-size="fontSize"
+            @update-theme="emit('update-theme', $event)"
+            @update-font-size="emit('update-font-size', $event)"
           />
           <ModelSettings
             v-else-if="tab === 'model'"
