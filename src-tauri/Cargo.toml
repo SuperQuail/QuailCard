@@ -1,6 +1,6 @@
 [package]
 name = "quailcard"
-version = "0.3.0"
+version = "0.4.0"
 description = "AI-powered learning card desktop application"
 authors = []
 edition = "2021"
