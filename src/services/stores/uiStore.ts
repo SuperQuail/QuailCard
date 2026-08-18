@@ -32,6 +32,11 @@ export async function setFontSize(next: FontSizeId): Promise<void> {
 
 /** 应用字号 CSS 变量到正文容器。 */
 export function applyFontSize(): void {
-  const sizes: Record<FontSizeId, string> = { compact: "14px", standard: "16px", comfortable: "18px" };
+  const sizes: Record<FontSizeId, string> = {
+    compact: "14px",
+    standard: "16px",
+    comfortable: "18px",
+    large: "20px",
+  };
   document.documentElement.style.setProperty("--editor-font-size", sizes[fontSize.value]);
 }

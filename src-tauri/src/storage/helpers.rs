@@ -1,9 +1,12 @@
+//! 纯文本辅助函数：标题推导、标签提取、片段高亮与听写答案规范化。
+//!
+//! 从原 SQLite 层迁移而来，逻辑保持不变；全文检索相关的中文分词
+//! 已随 FTS5 一并移除（文件版搜索使用大小写不敏感子串匹配）。
+
 use std::collections::HashSet;
 
-use crate::error::CommandError;
-
 /// 从文件路径推导笔记标题。
-pub(super) fn note_title_from_path(path: &str) -> String {
+pub(crate) fn note_title_from_path(path: &str) -> String {
     path.rsplit(['/', '\\'])
         .next()
         .unwrap_or(path)
@@ -11,8 +14,8 @@ pub(super) fn note_title_from_path(path: &str) -> String {
         .to_string()
 }
 
-/// 从正文提取行内标签。
-pub(super) fn extract_tags(content: &str) -> Vec<String> {
+/// 从正文提取行内标签，去重并限制数量。
+pub(crate) fn extract_tags(content: &str) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut tags = Vec::new();
     for word in content.split_whitespace() {
@@ -30,28 +33,8 @@ pub(super) fn extract_tags(content: &str) -> Vec<String> {
     tags
 }
 
-/// 将中文连续字符用空格分隔，使 FTS 能按短语匹配中文子串。
-pub(super) fn cjk_tokenize(text: &str) -> String {
-    let mut result = String::with_capacity(text.len() + text.len() / 2);
-    for character in text.chars() {
-        if is_cjk(character) {
-            result.push(' ');
-            result.push(character);
-            result.push(' ');
-        } else {
-            result.push(character);
-        }
-    }
-    result.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-/// 判断字符是否为中日韩统一表意文字。
-fn is_cjk(character: char) -> bool {
-    matches!(character, '\u{4E00}'..='\u{9FFF}' | '\u{3400}'..='\u{4DBF}')
-}
-
 /// 在原文中定位查询词并截取带标记的片段。
-pub(super) fn build_snippet(text: &str, query: &str) -> String {
+pub(crate) fn build_snippet(text: &str, query: &str) -> String {
     let query_chars: Vec<char> = query.trim().to_lowercase().chars().collect();
     let text_chars: Vec<char> = text.chars().collect();
     let lower_chars: Vec<char> = text.to_lowercase().chars().collect();
@@ -87,7 +70,7 @@ pub(super) fn build_snippet(text: &str, query: &str) -> String {
 }
 
 /// 规范化听写答案：全角折叠、小写、压缩空白。
-pub(super) fn normalize_answer(value: &str) -> String {
+pub(crate) fn normalize_answer(value: &str) -> String {
     value
         .chars()
         .map(fold_fullwidth_char)
@@ -110,22 +93,9 @@ fn fold_fullwidth_char(c: char) -> char {
     }
 }
 
-/// 解析数据库中的字符串数组 JSON。
-pub(super) fn parse_json_list(value: &str) -> Result<Vec<String>, CommandError> {
-    serde_json::from_str(value)
-        .map_err(|error| CommandError::new("DATABASE_DATA_INVALID", error.to_string()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    /// 中文分词会保留单字检索能力。
-    fn tokenizes_cjk_characters() {
-        assert_eq!(cjk_tokenize("Rust 所有权"), "Rust 所 有 权");
-        assert_eq!(cjk_tokenize("hello world"), "hello world");
-    }
 
     #[test]
     /// 标签提取会去重并限制数量。
@@ -137,6 +107,13 @@ mod tests {
     #[test]
     /// 听写答案规范化忽略大小写、空白和全角字符。
     fn normalizes_dictation_answers() {
-        assert_eq!(normalize_answer("  ＥＰＨＥＭＥＲＡＬ "), "ephemeral");
+        assert_eq!(normalize_answer("  ＥＰＨＥＭＥＲＡｌ "), "ephemeral");
+    }
+
+    #[test]
+    /// 片段高亮在命中词前后截取上下文。
+    fn builds_highlighted_snippet() {
+        let snippet = build_snippet("前后文 Rust 所有权 后文", "所有权");
+        assert!(snippet.contains("<mark>所有权</mark>"));
     }
 }

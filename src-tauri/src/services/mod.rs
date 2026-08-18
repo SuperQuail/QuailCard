@@ -9,7 +9,7 @@ mod speech;
 mod vault;
 
 use crate::{
-    ai::AiClient, database::Database, error::CommandError, models::ProviderConfig,
+    ai::AiClient, error::CommandError, models::ProviderConfig, storage::Storage,
     vault::EncryptedVault,
 };
 use openai_oauth::OpenAiOAuthService;
@@ -34,14 +34,14 @@ impl AppServices {
     }
 
     /// 启动时确保唯一加密保险库已经初始化。
-    pub async fn initialize(&self, database: &Database) -> Result<(), CommandError> {
-        self.vault.initialize(database).await
+    pub async fn initialize(&self, storage: &Storage) -> Result<(), CommandError> {
+        self.vault.initialize(storage).await
     }
 
     /// 读取供应商配置所引用的 API Key。
     pub(crate) async fn load_api_key(
         &self,
-        database: &Database,
+        storage: &Storage,
         config: &ProviderConfig,
     ) -> Result<String, CommandError> {
         if config.auth_type.as_deref() != Some("api_key") {
@@ -54,6 +54,6 @@ impl AppServices {
             .secret_ref
             .as_deref()
             .ok_or_else(|| CommandError::new("PROVIDER_KEY_MISSING", "请先配置 API Key"))?;
-        self.vault.get_credential(database, secret_ref).await
+        self.vault.get_credential(storage, secret_ref).await
     }
 }

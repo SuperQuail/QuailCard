@@ -1,7 +1,7 @@
 //! OpenAI OAuth 凭据的持久化与刷新回写编排。
 //!
 //! 本模块承接登录完成与令牌刷新后把凭据安全写入加密保险库、并原子替换数据库
-//! 引用的编排逻辑。它依赖 repository 方法（`Database`）与保险库端口
+//! 引用的编排逻辑。它依赖 repository 方法（`Storage`）与保险库端口
 //! （`EncryptedVault`），但不依赖任何协议端点细节；令牌交换与刷新本身在
 //! `openai_oauth_token` 模块。
 
@@ -11,12 +11,12 @@ use super::openai_oauth::OpenAiOAuthService;
 use super::openai_oauth_helpers::{credential_from_tokens, to_access, OpenAiAccess, TokenResponse};
 use super::openai_oauth_token::refresh_tokens;
 use crate::{
-    database::Database,
     error::CommandError,
     models::{
         OpenAiOAuthCredential, ProviderSummary, OPENAI_SUBSCRIPTION_PROVIDER_ID,
         OPENAI_SUBSCRIPTION_PROVIDER_TYPE,
     },
+    storage::Storage,
     vault::EncryptedVault,
 };
 
@@ -28,7 +28,7 @@ impl OpenAiOAuthService {
     /// `prepare_set_credential` 处理，原始令牌只存在于局部变量，不落日志。
     pub(super) async fn persist_credential(
         &self,
-        database: &Database,
+        storage: &Storage,
         vault: &EncryptedVault,
         provider_id: &str,
         tokens: TokenResponse,
@@ -37,7 +37,7 @@ impl OpenAiOAuthService {
         let credential = credential_from_tokens(tokens, None)?;
         let serialized = serde_json::to_string(&credential)
             .map_err(|_| CommandError::new("OAUTH_CREDENTIAL_ERROR", "无法序列化 OAuth 凭据"))?;
-        let current = database
+        let current = storage
             .get_provider_config(provider_id)
             .await?
             .ok_or_else(|| CommandError::new("PROVIDER_NOT_FOUND", "供应商不存在"))?;
@@ -52,13 +52,13 @@ impl OpenAiOAuthService {
         let new_secret_ref = Uuid::now_v7().to_string();
         let envelope = vault
             .prepare_set_credential(
-                database,
+                storage,
                 &new_secret_ref,
                 &serialized,
                 current.secret_ref.as_deref(),
             )
             .await?;
-        let provider = database
+        let provider = storage
             .replace_provider_credential(
                 provider_id,
                 Some(&new_secret_ref),
@@ -77,7 +77,7 @@ impl OpenAiOAuthService {
     /// 不暴露 refresh token；所有敏感值仅存于局部变量，不进入日志或错误消息。
     pub(super) async fn refresh_and_persist(
         &self,
-        database: &Database,
+        storage: &Storage,
         vault: &EncryptedVault,
         provider_id: &str,
         secret_ref: &str,
@@ -93,9 +93,9 @@ impl OpenAiOAuthService {
             CommandError::new("OAUTH_CREDENTIAL_ERROR", "无法序列化刷新后的 OAuth 凭据")
         })?;
         let envelope = vault
-            .prepare_set_credential(database, secret_ref, &serialized, None)
+            .prepare_set_credential(storage, secret_ref, &serialized, None)
             .await?;
-        database
+        storage
             .save_refreshed_oauth_credential(
                 provider_id,
                 refreshed.account_id.as_deref(),

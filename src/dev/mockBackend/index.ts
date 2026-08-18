@@ -177,6 +177,15 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
       return providersDomain.logoutOpenAi() as T;
     case "synthesize_speech":
       return providersDomain.synthesizeSpeech() as T;
+    case "get_data_locations":
+      // 演示环境无真实文件系统，返回与后端同形的占位路径。
+      return {
+        cardsDir: vaultPath ? `${vaultPath}/.quailcard` : null,
+        configDir: "C:\\Users\\demo\\AppData\\Roaming\\QuailCard",
+      } as T;
+    case "reveal_data_folder":
+      // 浏览器演示无法打开本地文件夹，静默成功即可。
+      return undefined as T;
     default:
       throw new Error(`演示环境不支持命令：${command}`);
   }

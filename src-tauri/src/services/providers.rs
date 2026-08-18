@@ -6,20 +6,20 @@ use uuid::Uuid;
 use super::AppServices;
 use crate::{
     ai::{normalize_base_url, ProviderProtocol},
-    database::Database,
     error::CommandError,
     models::{
         ConnectionTestResult, ProviderConfig, ProviderInput, ProviderSummary,
         OPENAI_SUBSCRIPTION_ENDPOINT, OPENAI_SUBSCRIPTION_PROVIDER_ID,
         OPENAI_SUBSCRIPTION_PROVIDER_TYPE,
     },
+    storage::Storage,
 };
 
 impl AppServices {
     /// 保存供应商配置，并在一个 SQLite 事务内切换加密凭据。
     pub async fn save_provider(
         &self,
-        database: &Database,
+        storage: &Storage,
         mut input: ProviderInput,
     ) -> Result<ProviderSummary, CommandError> {
         normalize_provider_input(&mut input)?;
@@ -29,7 +29,7 @@ impl AppServices {
             .id
             .clone()
             .unwrap_or_else(|| Uuid::now_v7().to_string());
-        let current = database.get_provider_config(&provider_id).await?;
+        let current = storage.get_provider_config(&provider_id).await?;
         let new_api_key = take_new_api_key(&mut input)?;
         validate_provider_subtype(
             current.as_ref(),
@@ -49,7 +49,7 @@ impl AppServices {
             let oauth_account_id = current
                 .as_ref()
                 .and_then(|config| config.oauth_account_id.as_deref());
-            return database
+            return storage
                 .save_provider_config(
                     &input,
                     &provider_id,
@@ -65,13 +65,13 @@ impl AppServices {
         let envelope = self
             .vault
             .prepare_set_credential(
-                database,
+                storage,
                 &new_secret_ref,
                 &api_key,
                 old_secret_ref.as_deref(),
             )
             .await?;
-        database
+        storage
             .save_provider_config(
                 &input,
                 &provider_id,
@@ -86,24 +86,24 @@ impl AppServices {
     /// 删除供应商及其加密凭据。
     pub async fn delete_provider(
         &self,
-        database: &Database,
+        storage: &Storage,
         provider_id: &str,
     ) -> Result<(), CommandError> {
         let _guard = self.vault.lock_operations().await;
         self.oauth.ensure_no_pending_attempt().await?;
-        let current = database.get_provider_config(provider_id).await?;
+        let current = storage.get_provider_config(provider_id).await?;
         let envelope = match current
             .as_ref()
             .and_then(|config| config.secret_ref.as_deref())
         {
             Some(secret_ref) => Some(
                 self.vault
-                    .prepare_delete_credential(database, secret_ref)
+                    .prepare_delete_credential(storage, secret_ref)
                     .await?,
             ),
             None => None,
         };
-        database
+        storage
             .delete_provider(provider_id, envelope.as_ref())
             .await
     }
@@ -111,12 +111,12 @@ impl AppServices {
     /// 使用当前表单配置发起真实连接测试，且绝不回传密钥。
     pub async fn test_provider(
         &self,
-        database: &Database,
+        storage: &Storage,
         mut input: ProviderInput,
     ) -> Result<ConnectionTestResult, CommandError> {
         normalize_provider_input(&mut input)?;
         let current = match input.id.as_deref() {
-            Some(provider_id) => database.get_provider_config(provider_id).await?,
+            Some(provider_id) => storage.get_provider_config(provider_id).await?,
             None => None,
         };
         let supplied_key = take_new_api_key(&mut input)?;
@@ -130,7 +130,7 @@ impl AppServices {
                 let stored = current.as_ref().ok_or_else(missing_credential)?;
                 match stored.auth_type.as_deref() {
                     Some("openai_oauth") => {
-                        let access = self.load_openai_access(database, stored).await?;
+                        let access = self.load_openai_access(storage, stored).await?;
                         self.ai
                             .test_openai_oauth_connection(
                                 &config,
@@ -140,7 +140,7 @@ impl AppServices {
                             .await?;
                     }
                     Some("api_key") => {
-                        let api_key = self.load_api_key(database, stored).await?;
+                        let api_key = self.load_api_key(storage, stored).await?;
                         self.ai.test_connection(&config, &api_key).await?;
                     }
                     _ => return Err(missing_credential()),
@@ -152,7 +152,7 @@ impl AppServices {
                 .as_ref()
                 .is_some_and(|stored| same_model_config(stored, &config));
         let provider = if persisted_match {
-            database.set_provider_connected(&config.id).await.ok()
+            storage.set_provider_connected(&config.id).await.ok()
         } else {
             None
         };
@@ -335,29 +335,27 @@ mod tests {
     #[tokio::test]
     /// 加密保险库可以保存超过 Windows 单条凭据限制的供应商值。
     async fn stores_large_credential_in_encrypted_vault() {
-        let database = Database::connect_memory()
-            .await
-            .expect("创建测试数据库失败");
+        let (storage, _config, _vault) = crate::storage::testutil::test_storage().await;
         let services = AppServices::new().expect("创建应用服务失败");
         services
-            .initialize(&database)
+            .initialize(&storage)
             .await
             .expect("初始化保险库失败");
         let credential = format!("sk-{}", "x".repeat(5_000));
         let mut input = test_input("https://example.com/v1");
         input.api_key = Some(credential.clone());
         let provider = services
-            .save_provider(&database, input)
+            .save_provider(&storage, input)
             .await
             .expect("保存大凭据失败");
-        let config = database
+        let config = storage
             .get_provider_config(&provider.id)
             .await
             .expect("查询供应商配置失败")
             .expect("供应商配置不存在");
         assert_eq!(
             services
-                .load_api_key(&database, &config)
+                .load_api_key(&storage, &config)
                 .await
                 .expect("读取大凭据失败"),
             credential

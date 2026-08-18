@@ -201,7 +201,7 @@ impl VaultState {
 }
 
 /// 净化相对路径：拒绝绝对路径、父目录与盘符。
-fn sanitize_relative(relative: &str) -> Result<PathBuf, CommandError> {
+pub(crate) fn sanitize_relative(relative: &str) -> Result<PathBuf, CommandError> {
     let path = Path::new(relative.trim());
     if relative.trim().is_empty() {
         return Err(CommandError::validation("路径不能为空"));

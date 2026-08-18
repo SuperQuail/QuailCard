@@ -37,22 +37,6 @@ impl std::fmt::Display for CommandError {
 
 impl std::error::Error for CommandError {}
 
-impl From<sqlx::Error> for CommandError {
-    /// 记录完整 SQLx 错误，只向前端返回不泄露 SQL 细节的数据库错误。
-    fn from(error: sqlx::Error) -> Self {
-        eprintln!("DATABASE_ERROR(detail): {error}");
-        Self::new("DATABASE_ERROR", "数据库操作失败，请稍后重试")
-    }
-}
-
-impl From<sqlx::migrate::MigrateError> for CommandError {
-    /// 记录完整迁移错误，只向前端返回安全的数据库迁移错误。
-    fn from(error: sqlx::migrate::MigrateError) -> Self {
-        eprintln!("DATABASE_MIGRATION_ERROR(detail): {error}");
-        Self::new("DATABASE_MIGRATION_ERROR", "数据库迁移失败，请稍后重试")
-    }
-}
-
 impl From<std::io::Error> for CommandError {
     /// 记录完整文件系统错误，并按错误类型返回不泄露本地路径的安全消息。
     fn from(error: std::io::Error) -> Self {

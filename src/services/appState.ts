@@ -30,6 +30,7 @@ export async function initialize(): Promise<void> {
     uiStore.fontSize.value = data.fontSize;
     vaultStore.vaultStatus.value = status;
     await vaultStore.loadVaultConfig();
+    await vaultStore.loadDataLocations();
     uiStore.applyFontSize();
     uiStore.initialized.value = true;
   } catch (error) {
@@ -43,6 +44,7 @@ export async function initialize(): Promise<void> {
 export async function openVault(path: string): Promise<void> {
   await vaultStore.openVault(path);
   await noteStore.refreshNotes();
+  await vaultStore.loadDataLocations();
 }
 
 /** 离开当前 Vault 回到选择页：清空各域残留状态。 */
@@ -50,6 +52,7 @@ export function leaveVault(): void {
   vaultStore.clearVault();
   noteStore.resetForVaultLeave();
   cardStore.clearActiveCards();
+  void vaultStore.loadDataLocations();
 }
 
 /** 窗口聚焦时重扫 Vault：刷新笔记列表并重载当前笔记内容。 */

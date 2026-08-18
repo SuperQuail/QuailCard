@@ -1,6 +1,6 @@
 import { ref } from "vue";
 import * as backend from "../../api/backend";
-import type { VaultConfig, VaultStatus } from "../../domain/types";
+import type { DataLocations, VaultConfig, VaultStatus } from "../../domain/types";
 import { clearAttachmentCache } from "../attachmentService";
 
 /**
@@ -13,6 +13,12 @@ export const vaultStatus = ref<VaultStatus | null>(null);
 export const vaultConfig = ref<VaultConfig>({ attachmentFolder: "attachments" });
 export const attachmentFolderSaving = ref(false);
 export const attachmentFolderStatus = ref("");
+export const dataLocations = ref<DataLocations>({ cardsDir: null, configDir: "" });
+
+/** 刷新数据位置信息；Vault 打开/离开后由编排层调用。 */
+export async function loadDataLocations(): Promise<void> {
+  dataLocations.value = await backend.getDataLocations();
+}
 
 /** 加载当前 Vault 的文件配置；无 Vault 时恢复界面默认值。 */
 export async function loadVaultConfig(): Promise<void> {

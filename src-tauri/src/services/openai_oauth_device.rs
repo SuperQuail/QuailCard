@@ -11,9 +11,9 @@ use super::super::openai_oauth_helpers::{
 use super::super::openai_oauth_token::exchange_code;
 use super::{cancelled_error, DeviceLoginContext, OpenAiOAuthService};
 use crate::{
-    database::Database,
     error::CommandError,
     models::{OpenAiLoginStart, ProviderSummary},
+    storage::Storage,
     vault::EncryptedVault,
 };
 
@@ -21,7 +21,7 @@ impl OpenAiOAuthService {
     /// 请求设备码并启动带超时的轮询任务。
     pub(super) async fn start_device(
         &self,
-        database: Database,
+        storage: Storage,
         vault: EncryptedVault,
         provider_id: String,
     ) -> Result<OpenAiLoginStart, CommandError> {
@@ -36,7 +36,7 @@ impl OpenAiOAuthService {
         tauri::async_runtime::spawn(async move {
             let result = service
                 .complete_device_login(DeviceLoginContext {
-                    database,
+                    storage,
                     vault,
                     provider_id,
                     device,
@@ -95,7 +95,7 @@ impl OpenAiOAuthService {
                 .await?;
                 return self
                     .persist_credential(
-                        &context.database,
+                        &context.storage,
                         &context.vault,
                         &context.provider_id,
                         tokens,
