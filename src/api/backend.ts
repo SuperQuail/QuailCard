@@ -5,6 +5,8 @@ import type {
   BootstrapData,
   CardInput,
   ConnectionTestResult,
+  DataFolderTarget,
+  DataLocations,
   DictationResult,
   FontSizeId,
   GenerationInput,
@@ -275,4 +277,14 @@ export function logoutOpenAi(providerId: string): Promise<ProviderSummary> {
 /** 合成单词发音，返回音频 Data URL。 */
 export function synthesizeSpeech(text: string): Promise<string> {
   return call<string>("synthesize_speech", { text });
+}
+
+/** 查询卡片数据与应用配置目录的位置信息。 */
+export function getDataLocations(): Promise<DataLocations> {
+  return call<DataLocations>("get_data_locations");
+}
+
+/** 在系统文件管理器中打开数据目录。 */
+export function revealDataFolder(target: DataFolderTarget): Promise<void> {
+  return call<void>("reveal_data_folder", { target });
 }

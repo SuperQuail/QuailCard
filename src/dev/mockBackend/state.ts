@@ -42,7 +42,7 @@ export type MockProvider = ProviderSummary;
 export const notes = new Map<string, MockNote>();
 export const cards = new Map<string, MockCard>();
 export let vaultPath: string | null = null;
-export let fontSize: "compact" | "standard" | "comfortable" = "comfortable";
+export let fontSize: "compact" | "standard" | "comfortable" | "large" = "comfortable";
 export let cardSequence = 0;
 export let vaultProtection: "default" | "password" = "default";
 export let vaultLocked = false;
@@ -70,7 +70,7 @@ export let mockActiveProviderId = "openai";
 export function setVaultPath(value: string | null): void {
   vaultPath = value;
 }
-export function setFontSize(value: "compact" | "standard" | "comfortable"): void {
+export function setFontSize(value: "compact" | "standard" | "comfortable" | "large"): void {
   fontSize = value;
 }
 export function setVaultProtection(value: "default" | "password"): void {

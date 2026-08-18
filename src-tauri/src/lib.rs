@@ -1,12 +1,12 @@
 mod ai;
 mod attachment_commands;
 mod commands;
-mod database;
 mod dictionary;
 mod error;
 mod models;
 mod scheduler;
 mod services;
+mod storage;
 mod vault;
 mod vault_crypto;
 mod vaultfs;
@@ -37,16 +37,12 @@ pub fn run() {
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
-            let database_path = app_data_dir.join("quailcard.sqlite3");
-            let database =
-                tauri::async_runtime::block_on(database::Database::connect(&database_path))?;
+            let storage = storage::Storage::open(&app_data_dir)?;
             let services = services::AppServices::new()?;
-            tauri::async_runtime::block_on(services.initialize(&database))?;
-            let dictionary = tauri::async_runtime::block_on(dictionary::Dictionary::connect(
-                &resolve_dictionary_path(app)?,
-            ))?;
+            tauri::async_runtime::block_on(services.initialize(&storage))?;
+            let dictionary = dictionary::Dictionary::connect(&resolve_dictionary_path(app)?)?;
             let speech = services::SpeechService::new(app_data_dir.join("speech"));
-            app.manage(database);
+            app.manage(storage);
             app.manage(services);
             app.manage(dictionary);
             app.manage(speech);
@@ -108,6 +104,8 @@ pub fn run() {
             commands::reset_vault,
             commands::lookup_dictionary_word,
             commands::synthesize_speech,
+            commands::get_data_locations,
+            commands::reveal_data_folder,
         ])
         .run(tauri::generate_context!())
         .expect("QuailCard 启动失败");

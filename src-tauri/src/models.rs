@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 // ============================================================
 
 /// 笔记摘要：对应 Vault 中的一个 .md 文件。
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NoteSummary {
     pub path: String,
@@ -230,7 +230,7 @@ pub struct SubmitReviewInput {
 }
 
 /// 提交评分后的最新调度状态。
-#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewProgress {
     pub due_at: i64,
@@ -280,7 +280,7 @@ pub struct AiEvaluationResult {
 // ============================================================
 
 /// 模型供应商的非敏感摘要。
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderSummary {
     pub id: String,
@@ -313,7 +313,7 @@ pub struct ProviderInput {
 }
 
 /// 后端发起模型请求所需的供应商配置。
-#[derive(Debug, Clone, sqlx::FromRow)]
+#[derive(Debug, Clone)]
 pub struct ProviderConfig {
     pub id: String,
     pub protocol: String,
@@ -363,14 +363,20 @@ pub struct OpenAiLoginStatus {
     pub provider: Option<ProviderSummary>,
 }
 
-/// SQLite 中保存的认证加密保险库密文记录。
-#[derive(Debug, Clone, sqlx::FromRow)]
+/// vault.bin 中保存的认证加密保险库密文记录。
+///
+/// 字节字段以 base64 编码持久化；结构变更遵循存储层"只增不改"契约。
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VaultEnvelope {
     pub format_version: i64,
     pub protection_mode: String,
+    #[serde(with = "crate::storage::envelope::base64_field")]
     pub kdf_salt: Vec<u8>,
     pub kdf_iterations: Option<i64>,
+    #[serde(with = "crate::storage::envelope::base64_field")]
     pub nonce: Vec<u8>,
+    #[serde(with = "crate::storage::envelope::base64_field")]
     pub ciphertext: Vec<u8>,
 }
 
@@ -453,4 +459,24 @@ pub struct StudyStats {
     pub total_cards: i64,
     pub weekly_completion_rate: Option<i64>,
     pub weekly_completed_count: i64,
+}
+
+/// 数据位置信息：Vault 内卡片镜像目录与应用配置目录。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataLocations {
+    /// 当前 Vault 的卡片数据目录；未打开 Vault 时为 None。
+    pub cards_dir: Option<String>,
+    /// 应用级配置目录（settings.toml / providers.toml / vault.bin）。
+    pub config_dir: String,
+}
+
+/// 可在系统文件管理器中打开的数据目录目标。
+///
+/// 前端只提交目标枚举，路径一律由服务端解析，杜绝任意路径注入。
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DataFolderTarget {
+    Cards,
+    Config,
 }

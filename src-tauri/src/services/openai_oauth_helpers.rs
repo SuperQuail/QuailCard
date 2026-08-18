@@ -17,9 +17,9 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::{
-    database::{now_timestamp, Database},
     error::CommandError,
     models::OpenAiOAuthCredential,
+    storage::{now_timestamp, Storage},
     vault::EncryptedVault,
 };
 
@@ -317,10 +317,10 @@ pub(super) fn to_access(credential: OpenAiOAuthCredential) -> OpenAiAccess {
 /// 从加密保险库读取并校验 OAuth JSON。
 pub(super) async fn read_oauth_credential(
     vault: &EncryptedVault,
-    database: &Database,
+    storage: &Storage,
     secret_ref: &str,
 ) -> Result<OpenAiOAuthCredential, CommandError> {
-    let serialized = vault.get_credential(database, secret_ref).await?;
+    let serialized = vault.get_credential(storage, secret_ref).await?;
     serde_json::from_str(&serialized)
         .map_err(|_| CommandError::new("OAUTH_CREDENTIAL_ERROR", "加密保险库中的 OAuth 数据无效"))
 }

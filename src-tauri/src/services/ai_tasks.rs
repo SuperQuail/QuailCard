@@ -9,38 +9,38 @@ use crate::{
         build_evaluation_prompt, debug_stage, evaluation_tool, parse_evaluation_response,
         MultiToolRequest, ToolCallBatch, ToolRequest,
     },
-    database::Database,
     error::CommandError,
     models::{
         AiEvaluationResult, EvaluateAnswerInput, ProviderConfig, ReviewRating, SubmitReviewInput,
     },
+    storage::Storage,
 };
 
 impl AppServices {
     /// 独立判定当前回答，并原子写入判定、评分和调度结果。
     pub async fn evaluate_answer(
         &self,
-        database: &Database,
+        storage: &Storage,
         input: EvaluateAnswerInput,
     ) -> Result<AiEvaluationResult, CommandError> {
         validate_evaluation_input(&input)?;
         if !input.practice {
-            if let Some(recorded) = database
+            if let Some(recorded) = storage
                 .get_recorded_ai_evaluation(&input.idempotency_key, &input.card_id)
                 .await?
             {
-                return restore_recorded_evaluation(database, &input.card_id, &recorded).await;
+                return restore_recorded_evaluation(storage, &input.card_id, &recorded).await;
             }
         }
 
-        let context = database.get_ai_evaluation_context(&input.card_id).await?;
+        let context = storage.get_ai_evaluation_context(&input.card_id).await?;
         let (system_prompt, user_prompt) = build_evaluation_prompt(&context, &input.user_answer)?;
         let tool = evaluation_tool();
-        let config = database.get_active_provider_config().await?;
+        let config = storage.get_active_provider_config().await?;
         let trace_id = Uuid::now_v7().to_string();
         let arguments = self
             .call_configured_tool(
-                database,
+                storage,
                 &config,
                 ToolRequest {
                     trace_id: &trace_id,
@@ -64,7 +64,7 @@ impl AppServices {
         }
         let evaluation_json = serde_json::to_string(&evaluation)
             .map_err(|error| CommandError::new("SERIALIZATION_ERROR", error.to_string()))?;
-        database
+        storage
             .submit_review_with_evaluation(
                 SubmitReviewInput {
                     card_id: input.card_id.clone(),
@@ -79,25 +79,25 @@ impl AppServices {
                 Some(&evaluation_json),
             )
             .await?;
-        let recorded = database
+        let recorded = storage
             .get_recorded_ai_evaluation(&input.idempotency_key, &input.card_id)
             .await?
             .ok_or_else(|| {
                 CommandError::new("DATABASE_DATA_INVALID", "AI 判定记录提交后不可读取")
             })?;
-        restore_recorded_evaluation(database, &input.card_id, &recorded).await
+        restore_recorded_evaluation(storage, &input.card_id, &recorded).await
     }
 
     /// 按供应商认证类型选择 API Key 或 ChatGPT OAuth 工具调用。
     async fn call_configured_tool(
         &self,
-        database: &Database,
+        storage: &Storage,
         config: &ProviderConfig,
         request: ToolRequest<'_>,
     ) -> Result<Value, CommandError> {
         match config.auth_type.as_deref() {
             Some("openai_oauth") => {
-                let access = self.load_openai_access(database, config).await?;
+                let access = self.load_openai_access(storage, config).await?;
                 self.ai
                     .call_openai_oauth_tool(
                         config,
@@ -108,7 +108,7 @@ impl AppServices {
                     .await
             }
             Some("api_key") => {
-                let api_key = self.load_api_key(database, config).await?;
+                let api_key = self.load_api_key(storage, config).await?;
                 self.ai.call_tool(config, &api_key, request).await
             }
             _ => Err(CommandError::new(
@@ -121,13 +121,13 @@ impl AppServices {
     /// 按供应商认证类型分发多工具自主调用请求。
     pub(super) async fn call_configured_multi_tool(
         &self,
-        database: &Database,
+        storage: &Storage,
         config: &ProviderConfig,
         request: MultiToolRequest<'_>,
     ) -> Result<ToolCallBatch, CommandError> {
         match config.auth_type.as_deref() {
             Some("openai_oauth") => {
-                let access = self.load_openai_access(database, config).await?;
+                let access = self.load_openai_access(storage, config).await?;
                 self.ai
                     .call_openai_oauth_multi_tool(
                         config,
@@ -138,7 +138,7 @@ impl AppServices {
                     .await
             }
             Some("api_key") => {
-                let api_key = self.load_api_key(database, config).await?;
+                let api_key = self.load_api_key(storage, config).await?;
                 self.ai.call_multi_tool(config, &api_key, request).await
             }
             _ => Err(CommandError::new(
@@ -167,12 +167,12 @@ fn validate_evaluation_input(input: &EvaluateAnswerInput) -> Result<(), CommandE
 
 /// 恢复幂等重试对应的历史判定和当前调度状态。
 async fn restore_recorded_evaluation(
-    database: &Database,
+    storage: &Storage,
     card_id: &str,
     evaluation_json: &str,
 ) -> Result<AiEvaluationResult, CommandError> {
     let mut evaluation: AiEvaluationResult = serde_json::from_str(evaluation_json)
         .map_err(|_| CommandError::new("DATABASE_DATA_INVALID", "已保存的 AI 判定格式无效"))?;
-    evaluation.progress = Some(database.get_review_progress(card_id).await?);
+    evaluation.progress = Some(storage.get_review_progress(card_id).await?);
     Ok(evaluation)
 }

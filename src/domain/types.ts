@@ -185,7 +185,16 @@ export interface AttachmentImage {
 }
 
 /** 界面字号档位。 */
-export type FontSizeId = "compact" | "standard" | "comfortable";
+export type FontSizeId = "compact" | "standard" | "comfortable" | "large";
+
+/** 数据位置信息：Vault 内卡片目录与应用配置目录。 */
+export interface DataLocations {
+  cardsDir: string | null;
+  configDir: string;
+}
+
+/** 可在文件管理器中打开的数据目录目标。 */
+export type DataFolderTarget = "cards" | "config";
 
 /** 主题。 */
 export type ThemeId = "light" | "dark";

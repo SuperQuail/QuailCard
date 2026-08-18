@@ -39,3 +39,9 @@ references/
 
 # 项目原型
 prototype/
+
+# Rust 构建产物
+src-tauri/target
+
+# 本机离线 cargo 缓存（系统 schannel TLS 故障期间的工作区级 CARGO_HOME，可整目录删除）
+.cargo-home/

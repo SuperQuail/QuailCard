@@ -13,12 +13,12 @@ use super::{
     AppServices,
 };
 use crate::{
-    database::{now_timestamp, Database},
     error::CommandError,
     models::{
         OpenAiLoginMode, OpenAiLoginStart, OpenAiLoginStatus, ProviderConfig, ProviderSummary,
         OPENAI_SUBSCRIPTION_PROVIDER_ID, OPENAI_SUBSCRIPTION_PROVIDER_TYPE,
     },
+    storage::{now_timestamp, Storage},
     vault::EncryptedVault,
 };
 
@@ -43,7 +43,7 @@ pub(super) struct AttemptRecord {
 
 /// 浏览器 OAuth 后台任务所需的完整上下文。
 pub(super) struct BrowserLoginContext {
-    pub(super) database: Database,
+    pub(super) storage: Storage,
     pub(super) vault: EncryptedVault,
     pub(super) provider_id: String,
     pub(super) listener: TcpListener,
@@ -55,7 +55,7 @@ pub(super) struct BrowserLoginContext {
 
 /// 设备码 OAuth 后台任务所需的完整上下文。
 pub(super) struct DeviceLoginContext {
-    pub(super) database: Database,
+    pub(super) storage: Storage,
     pub(super) vault: EncryptedVault,
     pub(super) provider_id: String,
     pub(super) device: DeviceCodeResponse,
@@ -68,12 +68,12 @@ impl AppServices {
     /// 启动 OpenAI OAuth 登录流程。
     pub async fn start_openai_login(
         &self,
-        database: &Database,
+        storage: &Storage,
         provider_id: &str,
         mode: OpenAiLoginMode,
     ) -> Result<OpenAiLoginStart, CommandError> {
         self.oauth
-            .start(database, &self.vault, provider_id, mode)
+            .start(storage, &self.vault, provider_id, mode)
             .await
     }
 
@@ -96,19 +96,19 @@ impl AppServices {
     /// 注销指定供应商的 OpenAI OAuth 凭据。
     pub async fn logout_openai(
         &self,
-        database: &Database,
+        storage: &Storage,
         provider_id: &str,
     ) -> Result<ProviderSummary, CommandError> {
-        self.oauth.logout(database, &self.vault, provider_id).await
+        self.oauth.logout(storage, &self.vault, provider_id).await
     }
 
     /// 为模型请求读取或刷新 OpenAI OAuth 访问令牌。
     pub(crate) async fn load_openai_access(
         &self,
-        database: &Database,
+        storage: &Storage,
         config: &ProviderConfig,
     ) -> Result<OpenAiAccess, CommandError> {
-        self.oauth.access(database, &self.vault, config).await
+        self.oauth.access(storage, &self.vault, config).await
     }
 }
 
@@ -129,12 +129,12 @@ impl OpenAiOAuthService {
     /// 启动浏览器 PKCE 或设备码登录，并在后台完成凭据切换。
     pub async fn start(
         &self,
-        database: &Database,
+        storage: &Storage,
         vault: &EncryptedVault,
         provider_id: &str,
         mode: OpenAiLoginMode,
     ) -> Result<OpenAiLoginStart, CommandError> {
-        let provider = database.get_provider_summary(provider_id).await?;
+        let provider = storage.get_provider_summary(provider_id).await?;
         if provider.id != OPENAI_SUBSCRIPTION_PROVIDER_ID
             || provider.provider_type != OPENAI_SUBSCRIPTION_PROVIDER_TYPE
             || provider.protocol != "OpenAI Compatible"
@@ -144,7 +144,7 @@ impl OpenAiOAuthService {
             ));
         }
         let _guard = vault.lock_operations().await;
-        if vault.status(database).await?.locked {
+        if vault.status(storage).await?.locked {
             return Err(CommandError::new(
                 "VAULT_LOCKED",
                 "凭据保险库已锁定，请先输入密码解锁",
@@ -154,11 +154,11 @@ impl OpenAiOAuthService {
 
         match mode {
             OpenAiLoginMode::Browser => {
-                self.start_browser(database.clone(), vault.clone(), provider_id.to_string())
+                self.start_browser(storage.clone(), vault.clone(), provider_id.to_string())
                     .await
             }
             OpenAiLoginMode::Device => {
-                self.start_device(database.clone(), vault.clone(), provider_id.to_string())
+                self.start_device(storage.clone(), vault.clone(), provider_id.to_string())
                     .await
             }
         }
@@ -199,13 +199,13 @@ impl OpenAiOAuthService {
     /// 注销 OpenAI OAuth，并原子删除保险库密文和供应商引用。
     pub async fn logout(
         &self,
-        database: &Database,
+        storage: &Storage,
         vault: &EncryptedVault,
         provider_id: &str,
     ) -> Result<ProviderSummary, CommandError> {
         let _guard = vault.lock_operations().await;
         self.ensure_no_pending_attempt().await?;
-        let config = database
+        let config = storage
             .get_provider_config(provider_id)
             .await?
             .ok_or_else(|| CommandError::new("PROVIDER_NOT_FOUND", "供应商不存在"))?;
@@ -221,10 +221,8 @@ impl OpenAiOAuthService {
         let secret_ref = config.secret_ref.as_deref().ok_or_else(|| {
             CommandError::new("PROVIDER_CREDENTIAL_MISSING", "OAuth 凭据引用不存在")
         })?;
-        let envelope = vault
-            .prepare_delete_credential(database, secret_ref)
-            .await?;
-        let provider = database
+        let envelope = vault.prepare_delete_credential(storage, secret_ref).await?;
+        let provider = storage
             .replace_provider_credential(provider_id, None, None, None, &envelope)
             .await?;
         Ok(provider)
@@ -233,7 +231,7 @@ impl OpenAiOAuthService {
     /// 读取有效访问令牌，并在临近过期时串行刷新和安全回写。
     pub async fn access(
         &self,
-        database: &Database,
+        storage: &Storage,
         vault: &EncryptedVault,
         config: &ProviderConfig,
     ) -> Result<OpenAiAccess, CommandError> {
@@ -246,17 +244,17 @@ impl OpenAiOAuthService {
         let secret_ref = config.secret_ref.as_deref().ok_or_else(|| {
             CommandError::new("PROVIDER_CREDENTIAL_MISSING", "OAuth 凭据引用不存在")
         })?;
-        let credential = read_oauth_credential(vault, database, secret_ref).await?;
+        let credential = read_oauth_credential(vault, storage, secret_ref).await?;
         if credential.expires_at > now_timestamp() + 60 {
             return Ok(to_access(credential));
         }
 
         let _guard = vault.lock_operations().await;
-        let credential = read_oauth_credential(vault, database, secret_ref).await?;
+        let credential = read_oauth_credential(vault, storage, secret_ref).await?;
         if credential.expires_at > now_timestamp() + 60 {
             return Ok(to_access(credential));
         }
-        self.refresh_and_persist(database, vault, &config.id, secret_ref, &credential)
+        self.refresh_and_persist(storage, vault, &config.id, secret_ref, &credential)
             .await
     }
 

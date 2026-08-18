@@ -9,10 +9,10 @@ use crate::{
         build_generation_prompt, debug_stage, generation_tools, GenerationSession,
         MultiToolRequest, ToolArgumentError, ToolArguments, ToolCallBatch, ToolMessage,
     },
-    database::Database,
     dictionary::{Dictionary, DictionaryEntry},
     error::CommandError,
     models::{GenerationInput, GenerationResult},
+    storage::Storage,
 };
 
 const MAX_DICTIONARY_RESULT_CHARS: usize = 6_000;
@@ -29,13 +29,13 @@ impl AppServices {
     /// 使用多轮单卡工具调用生成并累积可编辑卡片草稿。
     pub async fn generate_cards(
         &self,
-        database: &Database,
+        storage: &Storage,
         dictionary: &Dictionary,
         input: GenerationInput,
     ) -> Result<GenerationResult, CommandError> {
         let (system_prompt, user_prompt, max_tokens) = build_generation_prompt(&input)?;
         let tools = generation_tools(&input)?;
-        let config = database.get_active_provider_config().await?;
+        let config = storage.get_active_provider_config().await?;
         if !input.images.is_empty() && !config.supports_vision {
             return Err(CommandError::validation(
                 "当前供应商未启用图片输入，请更换模型或在模型设置中开启",
@@ -49,7 +49,7 @@ impl AppServices {
             debug_stage(&trace_id, format!("generation.turn: turn={turn}"));
             let batch = self
                 .call_configured_multi_tool(
-                    database,
+                    storage,
                     &config,
                     MultiToolRequest {
                         trace_id: &trace_id,

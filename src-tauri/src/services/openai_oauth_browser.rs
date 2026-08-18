@@ -15,9 +15,9 @@ use super::super::openai_oauth_helpers::{
 use super::super::openai_oauth_token::exchange_code;
 use super::{cancelled_error, BrowserLoginContext, LoginCancellation, OpenAiOAuthService};
 use crate::{
-    database::Database,
     error::CommandError,
     models::{OpenAiLoginStart, ProviderSummary},
+    storage::Storage,
     vault::EncryptedVault,
 };
 
@@ -25,7 +25,7 @@ impl OpenAiOAuthService {
     /// 启动本机回调服务器和浏览器 PKCE 后台任务。
     pub(super) async fn start_browser(
         &self,
-        database: Database,
+        storage: Storage,
         vault: EncryptedVault,
         provider_id: String,
     ) -> Result<OpenAiLoginStart, CommandError> {
@@ -48,7 +48,7 @@ impl OpenAiOAuthService {
         tauri::async_runtime::spawn(async move {
             let result = service
                 .complete_browser_login(BrowserLoginContext {
-                    database,
+                    storage,
                     vault,
                     provider_id,
                     listener,
@@ -82,7 +82,7 @@ impl OpenAiOAuthService {
         self.mark_completing(&context.attempt_id).await?;
         let tokens = exchange_code(&self.client, &code, CALLBACK_URI, &context.verifier).await?;
         self.persist_credential(
-            &context.database,
+            &context.storage,
             &context.vault,
             &context.provider_id,
             tokens,
