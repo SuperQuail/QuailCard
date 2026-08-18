@@ -390,6 +390,61 @@ kbd.kbd {
   border-bottom: 1px solid var(--qc-hairline);
 }
 
+/* 开关：iOS 式滑动 toggle，点击整体切换。 */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--qc-bg-hover);
+  border: 1px solid var(--qc-hairline);
+  transition: background-color 150ms, border-color 150ms;
+}
+
+.toggle-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 20%);
+  transition: transform 150ms;
+}
+
+.toggle-switch.is-on {
+  background: var(--qc-accent);
+  border-color: var(--qc-accent);
+}
+
+.toggle-switch.is-on::after {
+  transform: translateX(16px);
+}
+
+/* 设置行下拉框：与 field-input 同族但定宽右对齐。 */
+.setting-select {
+  width: 110px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--qc-hairline);
+  background: var(--qc-bg-paper);
+  font-size: 12px;
+  color: var(--qc-ink-2);
+  flex-shrink: 0;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.setting-select:focus {
+  outline: none;
+  border-color: var(--qc-accent);
+  box-shadow: 0 0 0 2px var(--qc-bg-active);
+}
+
 /* ============================================================
  * 编辑器正文排版：衬线、宽行距、居中阅读列。
  * ============================================================ */
