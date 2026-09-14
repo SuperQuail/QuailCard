@@ -101,7 +101,7 @@ grep -Fxq '#define FFMPEG_LICENSE "LGPL version 2.1 or later"' "$work/build/conf
   echo "Unexpected FFmpeg license; refusing to bundle" >&2; exit 1;
 }
 if [ "$os" = Darwin ]; then
-  lipo -verify_arch "$arch" "$binary"
+  lipo "$binary" -verify_arch "$arch"
   codesign --force --sign - "$binary"
 else
   "$binary" -version

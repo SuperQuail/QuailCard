@@ -53,7 +53,7 @@ cmake --build "$work/build" --config Release --target whisper-cli --parallel "${
 binary="$work/build/bin/whisper-cli"
 [ -x "$binary" ] || { echo "Missing whisper-cli build output" >&2; exit 1; }
 if [ "$os" = Darwin ]; then
-  lipo -verify_arch "$arch" "$binary"
+  lipo "$binary" -verify_arch "$arch"
   codesign --force --sign - "$binary"
 else
   # 系统 libc 可动态链接，但不可依赖构建目录内的 whisper/ggml 或 OpenMP 库。
