@@ -1,0 +1,45 @@
+name: build bundled whisper
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "scripts/fetch-whisper.*"
+      - "scripts/component-*"
+      - ".github/workflows/build-whisper.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  windows-vulkan:
+    runs-on: windows-2022
+    env:
+      TARGET_ARCH: x86_64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: src-tauri/resources/whisper
+          key: whisper-${{ runner.os }}-${{ env.TARGET_ARCH }}-1.7.6-vulkan-cpu-sse2-staticcrt-v3-${{ hashFiles('scripts/fetch-whisper.*', 'scripts/component-*') }}
+      - name: Build Vulkan and independent CPU (no CUDA)
+        shell: pwsh
+        run: ./scripts/fetch-whisper.ps1
+      - name: Smoke relocated CPU without SDK on PATH
+        shell: pwsh
+        run: |
+          $env:VULKAN_SDK = ""
+          & ./src-tauri/resources/whisper/cpu/whisper-cli.exe --help
+          if ($LASTEXITCODE -ne 0) { throw "CPU startup failed" }
+          # 无 GPU 的 CI 不宣称 Vulkan 实际模型推理已验证。
+      - uses: actions/upload-artifact@v6
+        with:
+          name: whisper-windows-x86_64-1.7.6-vulkan-cpu
+          path: |
+            src-tauri/resources/whisper/
+            src-tauri/resources/licenses/Apache-2.0.txt
+          if-no-files-found: error
+          retention-days: 14

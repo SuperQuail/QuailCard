@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "QuailCard 主窗口的基础权限",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://auth.openai.com/*" }]
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+name: check
+
+# 日常检查工作流：普通 push（任意分支）与 PR 时运行静态检查与测试。
+# 只做快速验证（fmt / clippy / 前后端测试），不做多平台打包；发布走 publish.yml。
+on:
+  push:
+    branches-ignore:
+      - release # release 分支由 publish.yml 负责五平台打包，避免重复构建。
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: fmt / clippy / tests
+    runs-on: ubuntu-22.04
+    env:
+      TARGET_ARCH: x86_64
+      COMPONENT_FLAVOR: cpu-baseline
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 Tauri Linux 系统依赖
+        # clippy 与测试也会编译 Tauri；依赖清单遵循 Tauri 官方 GitHub Actions 示例。
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils build-essential cmake git pkg-config perl
+
+      - name: 安装 pnpm
+        # setup-node 的 cache: pnpm 依赖 pnpm 已在 PATH 中，必须放在其前一步。
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: 'pnpm'
+
+      - name: 安装 Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: 缓存随包组件
+        uses: actions/cache@v4
+        with:
+          path: |
+            src-tauri/resources/ffmpeg
+            src-tauri/resources/whisper
+          key: quailcard-components-${{ runner.os }}-${{ env.TARGET_ARCH }}-ffmpeg-unix7.1.1-aom3.12.1-win20260911-lgpl-av1-v4-whisper-1.7.6-${{ env.COMPONENT_FLAVOR }}-${{ hashFiles('scripts/fetch-ffmpeg.*', 'scripts/fetch-whisper.*', 'scripts/component-*') }}
+
+      - name: 准备随包组件（ffmpeg / whisper-cli）
+        run: |
+          bash ./scripts/fetch-ffmpeg.sh
+          bash ./scripts/fetch-whisper.sh
+
+      - name: 拉取内置 ECDICT 词典
+        # Tauri 构建脚本会校验 resources/ecdict.db，clippy 与测试前必须准备该文件。
+        run: bash ./scripts/fetch-ecdict.sh
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 前端类型检查与测试
+        run: |
+          pnpm typecheck
+          pnpm test
+
+      - name: Rust 格式检查
+        working-directory: src-tauri
+        run: cargo fmt --all -- --check
+
+      - name: Rust 静态检查
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Rust 测试
+        working-directory: src-tauri
+        run: cargo test

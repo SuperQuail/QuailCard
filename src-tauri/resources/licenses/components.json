@@ -1,0 +1,50 @@
+{
+  "formatVersion": 1,
+  "components": [
+    {
+      "name": "whisper.cpp",
+      "version": "1.7.6",
+      "revision": "a8d002cfd879315632a579e73f0148d06959de36",
+      "license": "MIT",
+      "source": "https://github.com/ggml-org/whisper.cpp",
+      "windowsFlavor": "x86_64-vulkan-cpu-sse2-staticcrt",
+      "gpuRuntimeVerified": [
+        "Windows x86_64 NVIDIA RTX 4060 Vulkan0"
+      ],
+      "unixRuntimeVerified": false
+    },
+    {
+      "name": "Vulkan Loader",
+      "version": "1.4.321.0",
+      "license": "Apache-2.0 AND MIT",
+      "source": "https://github.com/KhronosGroup/Vulkan-Loader",
+      "artifact": "https://sdk.lunarg.com/sdk/download/1.4.321.0/windows/VulkanRT-X64-1.4.321.0-Components.zip",
+      "sha256": "f8ba79303face4b72a2f302f1a46e8c918995b54fbf24c0c9fc6c3d3ef525dca"
+    },
+    {
+      "name": "FFmpeg Windows",
+      "revision": "5b614efc7e6134274fa5d05e240736be2dc203cc",
+      "license": "LGPL-3.0-or-later",
+      "buildRecipeRevision": "cc8f0958be119db774cdaf6c50065651a4901e72",
+      "artifact": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-11-13-20/ffmpeg-N-126497-g5b614efc7e-win64-lgpl.zip",
+      "sha256": "17e902eed2544bd8d75982c69e091cbc9628c19a0fb8c86ca28926dd8f5215e4",
+      "sourceDistributionCaveat": "Publisher must retain matching source and notices for all linked third-party dependencies; FFmpeg source plus build recipes alone is insufficient."
+    },
+    {
+      "name": "FFmpeg Unix",
+      "version": "7.1.1",
+      "revision": "db69d06eeeab4f46da15030a80d539efb4503ca8",
+      "license": "LGPL-2.1-or-later",
+      "runtimeVerified": false
+    },
+    {
+      "name": "libaom Unix",
+      "version": "3.12.1",
+      "revision": "10aece4157eb79315da205f39e19bf6ab3ee30d0",
+      "license": "BSD-2-Clause",
+      "patentGrant": "PATENTS included with component",
+      "source": "https://aomedia.googlesource.com/aom",
+      "runtimeVerified": false
+    }
+  ]
+}
