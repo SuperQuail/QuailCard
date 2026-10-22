@@ -12,6 +12,8 @@ node_modules
 dist
 dist-ssr
 prototype-dist
+prototype/reference-shots
+
 *.local
 
 # Editor directories and files
