@@ -1,0 +1,5 @@
+# 根清单：QuailEgg 的 rust 驱动只在仓库根识别版本清单，因此用 workspace 把
+# src-tauri 归到根下；Cargo.lock 与 target/ 随之位于仓库根。
+[workspace]
+members = ["src-tauri"]
+resolver = "2"

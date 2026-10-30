@@ -1,0 +1,196 @@
+name: QuailEgg Release
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".changes/**"
+      - ".quailegg.toml"
+      - ".quailegg/pre-release.lock"
+      - ".quailegg/release.json"
+      - "CHANGELOG.md"
+      - "src-tauri/Cargo.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: qegg-release
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with: { workspaces: './ -> target' }
+      - uses: actions/cache@v4
+        with:
+          path: |
+            src-tauri/resources/ffmpeg
+            src-tauri/resources/whisper
+          key: quailcard-components-windows-ffmpeg-unix7.1.1-aom3.12.1-win20260911-lgpl-av1-v4-whisper-1.7.6-${{ hashFiles('scripts/fetch-ffmpeg.*', 'scripts/fetch-whisper.*', 'scripts/component-*') }}
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.12' }
+      - name: 检查解包工具
+        shell: pwsh
+        run: |
+          Get-Command 7z -ErrorAction Stop
+          python --version
+      - name: 准备随包组件与词典
+        shell: pwsh
+        run: |
+          pwsh ./scripts/fetch-ffmpeg.ps1
+          pwsh ./scripts/fetch-whisper.ps1
+          pwsh ./scripts/fetch-ecdict.ps1
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tauri build
+      - name: 收集安装包
+        shell: bash
+        run: bash ./scripts/collect-bundles.sh dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qegg-assets-windows
+          if-no-files-found: error
+          path: |
+            dist/*
+  build-macos-arm64:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: swatinem/rust-cache@v2
+        with: { workspaces: './ -> target' }
+      - uses: actions/cache@v4
+        with:
+          path: |
+            src-tauri/resources/ffmpeg
+            src-tauri/resources/whisper
+          key: quailcard-components-macos-ffmpeg-unix7.1.1-aom3.12.1-win20260911-lgpl-av1-v4-whisper-1.7.6-${{ hashFiles('scripts/fetch-ffmpeg.*', 'scripts/fetch-whisper.*', 'scripts/component-*') }}
+      - run: command -v pkg-config >/dev/null || brew install pkg-config
+      - name: 准备随包组件与词典
+        run: |
+          bash ./scripts/fetch-ffmpeg.sh
+          bash ./scripts/fetch-whisper.sh
+          bash ./scripts/fetch-ecdict.sh
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tauri build --target aarch64-apple-darwin
+      - name: 收集安装包
+        run: bash ./scripts/collect-bundles.sh dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qegg-assets-macos-arm64
+          if-no-files-found: error
+          path: |
+            dist/*
+  build-macos-x86_64:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - uses: swatinem/rust-cache@v2
+        with: { workspaces: './ -> target' }
+      - uses: actions/cache@v4
+        with:
+          path: |
+            src-tauri/resources/ffmpeg
+            src-tauri/resources/whisper
+          key: quailcard-components-macos-ffmpeg-unix7.1.1-aom3.12.1-win20260911-lgpl-av1-v4-whisper-1.7.6-${{ hashFiles('scripts/fetch-ffmpeg.*', 'scripts/fetch-whisper.*', 'scripts/component-*') }}
+      - run: command -v pkg-config >/dev/null || brew install pkg-config
+      - name: 准备随包组件与词典
+        run: |
+          bash ./scripts/fetch-ffmpeg.sh
+          bash ./scripts/fetch-whisper.sh
+          bash ./scripts/fetch-ecdict.sh
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tauri build --target x86_64-apple-darwin
+      - name: 收集安装包
+        run: bash ./scripts/collect-bundles.sh dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qegg-assets-macos-x86_64
+          if-no-files-found: error
+          path: |
+            dist/*
+  release:
+    needs:
+      - build-windows
+      - build-macos-arm64
+      - build-macos-x86_64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.26', cache: true }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install qegg
+        run: go install github.com/SuperQuail/QuailEgg/cmd/qegg@v0.9.0
+      - name: 固定发布日志语言
+        run: echo "QEGG_LANG=zh" >> "$GITHUB_ENV"
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - name: 安装 Tauri Linux 系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils build-essential cmake git pkg-config perl
+      - name: 准备随包资源（词典 / ffmpeg / whisper）
+        run: |
+          bash ./scripts/fetch-ecdict.sh
+          bash ./scripts/fetch-ffmpeg.sh
+          bash ./scripts/fetch-whisper.sh
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: qegg-assets-*
+          path: .quailegg/assets/downloaded
+      - name: Release
+        run: qegg release --yes --assets-dir .quailegg/assets/downloaded
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

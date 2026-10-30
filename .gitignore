@@ -47,8 +47,13 @@ references/
 # 项目原型
 prototype/
 
-# Rust 构建产物
-src-tauri/target
+# Rust 构建产物（src-tauri 是根 workspace 成员，产物在仓库根 target/）
+/target
 
 # 本机离线 cargo 缓存（系统 schannel TLS 故障期间的工作区级 CARGO_HOME，可整目录删除）
 .cargo-home/
+
+# qegg runtime state
+/.quailegg/state/
+/.quailegg/lock
+/.quailegg/assets/
