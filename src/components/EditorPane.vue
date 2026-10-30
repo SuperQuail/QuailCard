@@ -2,7 +2,9 @@
 import { Sparkles, X } from "@lucide/vue";
 import NoteToolbar from "./NoteToolbar.vue";
 import NoteTabs from "./NoteTabs.vue";
+import ImageContextMenu from "./ImageContextMenu.vue";
 import { useEditorTabCache } from "../composables/useEditorTabCache";
+import { useImageMenu } from "../composables/useImageMenu";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { Compartment, Transaction } from "@codemirror/state";
@@ -10,12 +12,14 @@ import { languages } from "@codemirror/language-data";
 import { syntaxHighlighting } from "@codemirror/language";
 import { classHighlighter } from "@lezer/highlight";
 import { captureCardSource } from "../domain/cardSource";
+import { clampImageMenuPosition } from "../domain/imageMenu";
 import type { CardSelection, NoteCard } from "../domain/types";
 import { codeBlockPreview } from "../editor/codeBlocks";
 import { codeBlockTheme } from "../editor/codeBlockTheme";
 import { markdownMathPreview } from "../editor/markdownMath";
 import { markdownTablePreview, markdownTableTheme } from "../editor/markdownTables";
-import { mathExtension } from "../markdown/parser";
+import { markdownExtensions } from "../markdown/parser";
+import { frontmatterExtension } from "../markdown/frontmatterView";
 import { EditorView, keymap } from "@codemirror/view";
 import { externalNoteUpdate, useEditorReadingMode } from "../composables/useEditorReadingMode";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -25,9 +29,15 @@ import { remeasureOnContentResize } from "../editor/contentResize";
 import { markdownListGlyphs } from "../editor/markdownLists";
 import { markdownHorizontalRules } from "../editor/markdownRules";
 import { imageTransferExtension } from "../editor/imageTransfer";
-import { markdownImagePreview } from "../editor/markdownImages";
+import { markdownImagePreview, type MarkdownImageReference } from "../editor/markdownImages";
 import { markdownTheme } from "../editor/markdownTheme";
 import { resolveAttachmentDataUrl } from "../services/attachmentService";
+import { noteSearchExtension } from "../editor/noteSearch";
+import { wikilinkExtension } from "../editor/wikilinks";
+import { wikilinkCompletion } from "../editor/wikilinkCompletion";
+import { splitWikiTarget } from "../markdown/wikilink";
+import { resolveLink } from "../domain/links";
+import type { NoteSummary } from "../domain/types";
 import VirtualScrollbar from "./VirtualScrollbar.vue";
 
 /** CodeMirror 真正的滚动容器：容器 div 自己不滚动，滚动几何只能问 .cm-scroller。 */
@@ -42,6 +52,8 @@ const props = defineProps<{
   cards?: NoteCard[];
   tabs?: { path: string; title: string }[];
   tabsBusy?: boolean;
+  /** 全部笔记摘要：双链的解析判定与补全候选都来自这里，组件自身不查 store。 */
+  linkTargets?: NoteSummary[];
 }>();
 
 const emit = defineEmits<{
@@ -51,6 +63,12 @@ const emit = defineEmits<{
   "select-tab": [path: string];
   "close-tab": [path: string];
   "save-content": [notePath: string, content: string];
+  /** 点击 [[双链]] 时上抛目标；解析与打开由壳层决定。 */
+  "open-link": [target: string];
+  /** 视口顶部所在的字符偏移（节流上报），供大纲换算当前高亮项。 */
+  "viewport-change": [offset: number];
+  /** 图片菜单动作结果提示：编辑器只上抛文案，提示组件由壳层统一渲染。 */
+  toast: [message: string];
 }>();
 
 /** 划词浮条：选区文本与屏幕坐标。 */
@@ -69,9 +87,50 @@ const cardsCompartment = new Compartment();
 let view: EditorView | null = null;
 const readingMode = useEditorReadingMode(() => view, () => Boolean(props.readOnly));
 const { reading } = readingMode;
+// 解构保留 ref：script setup 只解包顶层 ref，嵌套在对象里的 ref 在模板中不会自动解包。
+const {
+  context: imageMenu, busy: imageMenuBusy, open: openImageMenu, close: closeImageMenu,
+  copyImage, saveImage, revealImage,
+} = useImageMenu({ showToast: (message) => emit("toast", message) });
 const tabCache = useEditorTabCache();
 let syncingDocument = false;
 let editorGeneration = 0;
+
+/** 判断 [[目标]] 是否指向已存在的笔记；#标题 不参与解析。 */
+function isLinkResolved(target: string): boolean {
+  return resolveLink(splitWikiTarget(target).note, props.notePath, props.linkTargets ?? []) !== null;
+}
+
+/**
+ * 视口顶部偏移的节流上报：滚动与编辑都会触发，但大纲只需要稳定结果。
+ * 同一个定时器内的多次事件合并成一次 emit，避免每帧重算大纲高亮。
+ */
+let viewportTimer: number | null = null;
+/** 排队一次视口上报；已有待发事件时直接复用。 */
+function scheduleViewportReport(current: EditorView): void {
+  if (viewportTimer !== null) return;
+  viewportTimer = window.setTimeout(() => {
+    viewportTimer = null;
+    if (view === current) {
+      emit("viewport-change", current.lineBlockAtHeight(0).from);
+    }
+  }, 150);
+}
+
+/** 滚动到正文内某个字符偏移并把光标放过去（大纲跳转）。 */
+function revealPosition(from: number): void {
+  if (!view) return;
+  const pos = Math.max(0, Math.min(from, view.state.doc.length));
+  view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: "start" }) });
+  view.focus();
+}
+
+/** 滚动到 1 起始的第 line 行（反链跳转）；行号越界时夹到首末行。 */
+function revealLine(line: number): void {
+  if (!view) return;
+  const doc = view.state.doc;
+  revealPosition(doc.line(Math.max(1, Math.min(line, doc.lines))).from);
+}
 
 /** 读取 CodeMirror 的真实选区，失焦后仍能用于智能拆卡。 */
 function getSelection(): CardSelection | null {
@@ -80,7 +139,16 @@ function getSelection(): CardSelection | null {
   return { notePath: props.notePath, source: captureCardSource(view.state.doc.toString(), from, to) };
 }
 
-defineExpose({ getSelection });
+defineExpose({ getSelection, revealPosition, revealLine });
+
+/** 把图片右键坐标钳制进视口后交给菜单用例；菜单如何展示由壳层决定。 */
+function handleImageContextMenu(image: MarkdownImageReference, event: MouseEvent): void {
+  openImageMenu({
+    notePath: props.notePath,
+    source: image.source,
+    ...clampImageMenuPosition(event.clientX, event.clientY, { width: window.innerWidth, height: window.innerHeight }),
+  });
+}
 
 /** 创建 CodeMirror 编辑器实例。 */
 function createEditor(): void {
@@ -89,7 +157,7 @@ function createEditor(): void {
   readingMode.restore(saved?.reading);
   // 每次激活换代，旧图片请求即使切回同一路径也不能继续导入或报告错误。
   const generation = ++editorGeneration;
-  const images = [markdownImagePreview(props.notePath, resolveAttachmentDataUrl),
+  const images = [markdownImagePreview(props.notePath, resolveAttachmentDataUrl, { onContextMenu: handleImageContextMenu }),
     imageTransferExtension(() => generation === editorGeneration ? props.notePath : "",
       (message) => { if (generation === editorGeneration) editorError.value = message; })];
   const state = saved?.state?.update({ effects: imageCompartment.reconfigure([]) }).state
@@ -103,7 +171,8 @@ function createEditor(): void {
       history(),
       readingMode.extensions(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
-      markdown({ base: markdownLanguage, extensions: [mathExtension], codeLanguages: languages }),
+      // 编辑器与显示侧共用同一份自定义语法登记表（公式、frontmatter、双链）。
+      markdown({ base: markdownLanguage, extensions: [...markdownExtensions], codeLanguages: languages }),
       syntaxHighlighting(classHighlighter),
       codeBlockPreview,
       codeBlockTheme,
@@ -118,9 +187,17 @@ function createEditor(): void {
       markdownListGlyphs,
       markdownHorizontalRules,
       remeasureOnContentResize,
+      noteSearchExtension(),
+      // 双链的解析状态与补全候选都由 props 提供，装饰层不依赖 store。
+      wikilinkExtension({ onOpen: (target) => emit("open-link", target), isResolved: isLinkResolved }),
+      wikilinkCompletion(() => props.linkTargets ?? []),
+      frontmatterExtension(),
       EditorView.updateListener.of((update) => {
         if (update.view !== view) return;
         readingMode.trackUpdate(update);
+        if (update.viewportChanged || update.docChanged) {
+          scheduleViewportReport(update.view);
+        }
         if (update.docChanged && !syncingDocument) {
           emit("save-content", props.notePath, update.state.doc.toString());
         }
@@ -243,6 +320,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  if (viewportTimer !== null) { window.clearTimeout(viewportTimer); viewportTimer = null; }
   window.removeEventListener("mouseup", handleSelectionEnd);
   window.removeEventListener("mousedown", handleGlobalEvent);
   window.removeEventListener("keydown", handleGlobalEvent);
@@ -285,11 +363,24 @@ onBeforeUnmount(() => {
         <X :size="13" />
       </button>
     </div>
+
+    <!-- 图片右键菜单自带 Teleport，放在编辑器壳层内即可，不参与布局。 -->
+    <ImageContextMenu
+      v-if="imageMenu"
+      :request="imageMenu"
+      :busy="imageMenuBusy"
+      @copy="void copyImage()"
+      @save="void saveImage()"
+      @reveal="void revealImage()"
+      @close="closeImageMenu"
+    />
   </div>
 </template>
 
 <style scoped>
 .editor-pane { container-type: inline-size; }
+/* 无标签时工具栏图标绝对定位在右上角，查找面板要给它们让出宽度，否则关闭按钮会被压住。 */
+.editor-pane:not(.has-tabs) :deep(.cm-search) { padding-right: 88px; }
 /* 内容区较窄时为按钮留右侧空隙，不额外增加顶部空行，也不遮挡文字。 */
 @container (max-width: 1360px) {
   .editor-pane:not(.has-tabs) :deep(.cm-content) { padding-right: 88px; }

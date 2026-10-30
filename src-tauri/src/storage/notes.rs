@@ -5,8 +5,27 @@
 
 use std::sync::RwLock;
 
-use super::{helpers, notes_summary_sort_key, Storage};
+use super::{frontmatter, helpers, links, notes_summary_sort_key, Storage};
 use crate::{error::CommandError, models::NoteSummary};
+
+/// 汇总一篇笔记的标签与别名。
+///
+/// 契约：frontmatter 声明的标签排在正文行内标签之前（作者显式声明更权威），
+/// 合并去重后仍受行内标签的数量上限约束；别名只来自 frontmatter。
+fn collect_tags(content: &str) -> (Vec<String>, Vec<String>) {
+    let (meta, body) = frontmatter::parse_content(content);
+    let mut tags = meta.tags;
+    for tag in helpers::extract_tags(body) {
+        if !tags.contains(&tag) {
+            tags.push(tag);
+        }
+        if tags.len() >= 20 {
+            break;
+        }
+    }
+    tags.truncate(20);
+    (tags, meta.aliases)
+}
 
 /// 笔记内存索引；条目按（标题, 路径）稳定排序。
 #[derive(Default)]
@@ -20,6 +39,10 @@ pub(crate) struct NoteEntry {
     pub(crate) path: String,
     pub(crate) title: String,
     pub(crate) tags: Vec<String>,
+    /// frontmatter 声明的别名：双链解析时与标题同等对待。
+    pub(crate) aliases: Vec<String>,
+    /// 正文中指向其他笔记的双链（文档 UTF-16 坐标），反链查询与改名改写都用它。
+    pub(crate) links: Vec<links::RawLink>,
     pub(crate) mtime: i64,
     pub(crate) content: String,
 }
@@ -29,12 +52,17 @@ impl NoteIndex {
     pub(crate) fn rebuild(&self, files: &[(String, String, i64)]) {
         let mut entries: Vec<NoteEntry> = files
             .iter()
-            .map(|(path, content, mtime)| NoteEntry {
-                path: path.clone(),
-                title: helpers::note_title_from_path(path),
-                tags: helpers::extract_tags(content),
-                mtime: *mtime,
-                content: content.clone(),
+            .map(|(path, content, mtime)| {
+                let (tags, aliases) = collect_tags(content);
+                NoteEntry {
+                    path: path.clone(),
+                    title: helpers::note_title_from_path(path),
+                    tags,
+                    aliases,
+                    links: links::scan_content_links(content),
+                    mtime: *mtime,
+                    content: content.clone(),
+                }
             })
             .collect();
         entries.sort_by(|left, right| {
@@ -48,10 +76,13 @@ impl NoteIndex {
 
     /// 单篇笔记保存后新增或替换索引条目，保持排序不变量。
     pub(crate) fn upsert(&self, path: &str, content: &str, mtime: i64) {
+        let (tags, aliases) = collect_tags(content);
         let entry = NoteEntry {
             path: path.to_string(),
             title: helpers::note_title_from_path(path),
-            tags: helpers::extract_tags(content),
+            tags,
+            aliases,
+            links: links::scan_content_links(content),
             mtime,
             content: content.to_string(),
         };
@@ -155,6 +186,7 @@ impl Storage {
                     path: entry.path.clone(),
                     title: entry.title.clone(),
                     tags_json: serde_json::to_string(&entry.tags).unwrap_or_else(|_| "[]".into()),
+                    aliases: entry.aliases.clone(),
                     card_count,
                     due_count,
                     mtime: entry.mtime,
@@ -184,5 +216,47 @@ impl Storage {
     pub async fn delete_folder_paths(&self, prefix: &str) -> Result<(), CommandError> {
         self.inner.notes.remove_prefix(prefix);
         self.inner.cards.delete_folder_paths(prefix)
+    }
+
+    /// 笔记移入回收站后，把索引与卡片从活跃集合中分离；卡片文件保留在
+    /// 隔离区，用户从系统回收站还原笔记后还能一并接回。
+    pub async fn detach_note_paths(&self, path: &str) -> Result<(), CommandError> {
+        self.inner.notes.remove(path);
+        self.inner.cards.detach_note_paths(path)
+    }
+
+    /// 文件夹移入回收站后，分离其下全部索引与卡片。
+    pub async fn detach_folder_paths(&self, prefix: &str) -> Result<(), CommandError> {
+        self.inner.notes.remove_prefix(prefix);
+        self.inner.cards.detach_folder_paths(prefix)
+    }
+}
+
+/// 双链联动与反链查询共用的一篇笔记快照。
+pub(crate) struct LinkSnapshotEntry {
+    pub(crate) path: String,
+    pub(crate) title: String,
+    pub(crate) aliases: Vec<String>,
+    pub(crate) links: Vec<links::RawLink>,
+    pub(crate) content: String,
+}
+
+impl Storage {
+    /// 克隆全部笔记的双链相关快照：链接解析、反链与改名改写都基于它计算。
+    ///
+    /// 快照与索引同源，不额外持锁；调用方拿到的是拷贝，可在不阻塞索引的前提下遍历。
+    pub(crate) async fn link_snapshot(&self) -> Vec<LinkSnapshotEntry> {
+        self.inner
+            .notes
+            .snapshot()
+            .into_iter()
+            .map(|entry| LinkSnapshotEntry {
+                path: entry.path,
+                title: entry.title,
+                aliases: entry.aliases,
+                links: entry.links,
+                content: entry.content,
+            })
+            .collect()
     }
 }

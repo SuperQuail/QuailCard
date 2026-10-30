@@ -11,6 +11,10 @@ const props = defineProps<{
   vaultPath: string;
   recentVaults: string[];
   aiGradingEnabled: boolean;
+  /** 删除笔记时是否跳过系统回收站（全局设置）。 */
+  permanentDelete: boolean;
+  /** 改名/移动笔记时是否自动改写其他笔记里的双链（全局设置）。 */
+  updateLinksOnRename: boolean;
   attachmentFolder: string;
   attachmentFolderSaving: boolean;
   attachmentFolderStatus: string;
@@ -21,6 +25,8 @@ const emit = defineEmits<{
   "change-vault": [];
   "open-recent-vault": [path: string];
   "update-ai-grading": [enabled: boolean];
+  "update-permanent-delete": [enabled: boolean];
+  "update-links-on-rename": [enabled: boolean];
   "save-attachment-folder": [attachmentFolder: string];
   "reveal-data-folder": [target: "cards" | "config"];
 }>();
@@ -88,6 +94,24 @@ const cardsDirLabel = computed(() => {
         </div>
         <p v-if="attachmentFolderStatus" class="mt-1.5 text-[11px]" :class="attachmentFolderStatus === '已保存' ? 'text-success' : 'text-danger'">{{ attachmentFolderStatus }}</p>
       </div>
+    </div>
+  </section>
+
+  <section class="mt-6">
+    <p class="text-[11px] font-semibold tracking-wide text-ink-3 uppercase">文件</p>
+    <div class="setting-row">
+      <div>
+        <p class="text-[12px] font-medium">永久删除（不经过回收站）</p>
+        <p class="mt-0.5 text-[11px] text-ink-3">开启后删除无法恢复</p>
+      </div>
+      <button type="button" role="switch" :aria-checked="permanentDelete" class="toggle-switch" :class="{ 'is-on': permanentDelete }" :aria-label="permanentDelete ? '关闭永久删除' : '开启永久删除'" @click="emit('update-permanent-delete', !permanentDelete)"></button>
+    </div>
+    <div class="setting-row">
+      <div>
+        <p class="text-[12px] font-medium">改名时更新引用链接</p>
+        <p class="mt-0.5 text-[11px] text-ink-3">关闭后，重命名笔记或文件夹不会改动其他笔记里的 [[双链]]</p>
+      </div>
+      <button type="button" role="switch" :aria-checked="updateLinksOnRename" class="toggle-switch" :class="{ 'is-on': updateLinksOnRename }" :aria-label="updateLinksOnRename ? '关闭改名时更新引用链接' : '开启改名时更新引用链接'" @click="emit('update-links-on-rename', !updateLinksOnRename)"></button>
     </div>
   </section>
 

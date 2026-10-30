@@ -12,6 +12,7 @@ use std::{
 };
 
 use super::{
+    card_detach,
     card_files::{
         card_relative_path, cleanup_empty_parents, load_card_files, lock_write, persist_cards,
         remove_card_from_note, remove_note_cards, require_root,
@@ -47,8 +48,12 @@ impl CardStore {
     /// 设置 Vault 根目录并全量加载 .quailcard 卡片文件。
     ///
     /// 重新扫描（外部修改检测）也走本方法：以磁盘为准整体替换内存。
+    /// 加载前先接回从回收站还原的卡片、再清理超期隔离文件，保证还原的
+    /// 卡片在同一轮打开中立即可见；两步都是尽力而为的维护操作。
     pub(crate) fn set_root(&self, root: &Path) -> Result<(), CommandError> {
         let mut state = lock_write(&self.state)?;
+        card_detach::reattach_detached(root);
+        card_detach::purge_detached(root);
         let mut fresh = CardState {
             root: Some(root.to_path_buf()),
             ..CardState::default()
@@ -168,7 +173,7 @@ impl CardStore {
             persist_cards(&root, &new_key, &cards)?;
             if source.exists() {
                 std::fs::remove_file(&source)?;
-                cleanup_empty_parents(&root, source.parent());
+                cleanup_empty_parents(&root, Some(source.as_path()));
             }
             state.notes.remove(&key);
             state.notes.insert(new_key.clone(), cards);
@@ -177,6 +182,50 @@ impl CardStore {
                     *note = new_key.clone();
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// 正文里的双链被改写后，按平移量修正卡片来源锚点。
+    ///
+    /// 契约：完全位于改写点之前的锚点不动；之后的按累计差值平移；
+    /// 与改写区间（含上下文窗口）相交的锚点保持原样——宁可让前端显示
+    /// "来源已失效"，也绝不猜测新位置，避免复习题指向错误句子。
+    pub(crate) fn shift_card_sources(
+        &self,
+        note_path: &str,
+        edits: &[super::links::Edit],
+    ) -> Result<(), CommandError> {
+        if edits.is_empty() {
+            return Ok(());
+        }
+        let mut state = lock_write(&self.state)?;
+        let root = require_root(&state)?;
+        let Some(mut cards) = state.notes.get(note_path).cloned() else {
+            return Ok(());
+        };
+        let mut changed = false;
+        for record in &mut cards {
+            let Some(source) = record.source.as_mut() else {
+                continue;
+            };
+            let prefix_len = source.prefix.encode_utf16().count();
+            let suffix_len = source.suffix.encode_utf16().count();
+            let start = source.from.saturating_sub(prefix_len);
+            let end = source.to + suffix_len;
+            let Some(delta) = shift_for_span(edits, start, end) else {
+                continue;
+            };
+            if delta == 0 {
+                continue;
+            }
+            source.from = adjust(source.from, delta);
+            source.to = adjust(source.to, delta);
+            changed = true;
+        }
+        if changed {
+            persist_cards(&root, note_path, &cards)?;
+            state.notes.insert(note_path.to_string(), cards);
         }
         Ok(())
     }
@@ -201,6 +250,33 @@ impl CardStore {
             .collect();
         for key in affected {
             remove_note_cards(&mut state, &key, &root)?;
+        }
+        Ok(())
+    }
+
+    /// 分离单篇笔记的全部卡片：移出内存索引并把镜像文件挪进隔离区。
+    ///
+    /// 与 delete_note_paths 对应，区别只是不销毁数据：卡片文件路径与复习
+    /// 历史原样保留，笔记从回收站还原后由 set_root 自动接回。
+    pub(crate) fn detach_note_paths(&self, note_path: &str) -> Result<(), CommandError> {
+        let mut state = lock_write(&self.state)?;
+        let root = require_root(&state)?;
+        card_detach::detach_note(&mut state, note_path, &root)
+    }
+
+    /// 分离文件夹前缀下全部笔记的卡片；前缀匹配规则与 delete_folder_paths 一致。
+    pub(crate) fn detach_folder_paths(&self, prefix: &str) -> Result<(), CommandError> {
+        let mut state = lock_write(&self.state)?;
+        let root = require_root(&state)?;
+        let child_prefix = format!("{prefix}/");
+        let affected: Vec<String> = state
+            .notes
+            .keys()
+            .filter(|key| key.as_str() == prefix || key.starts_with(&child_prefix))
+            .cloned()
+            .collect();
+        for key in affected {
+            card_detach::detach_note(&mut state, &key, &root)?;
         }
         Ok(())
     }
@@ -258,7 +334,46 @@ impl CardStore {
     }
 }
 
+/// 计算一段区间（锚点连同上下文）在改写后需要平移的 UTF-16 差值。
+///
+/// 返回 None 表示区间与某次改写相交，调用方应保持锚点原样；
+/// 返回 Some(0) 表示区间整体在改写点之前，无需调整。
+fn shift_for_span(edits: &[super::links::Edit], start: usize, end: usize) -> Option<isize> {
+    let mut delta: isize = 0;
+    for edit in edits {
+        let removed = edit.to.saturating_sub(edit.from);
+        let shift = edit.new_len as isize - removed as isize;
+        if end <= edit.from {
+            break;
+        }
+        if start >= edit.to {
+            delta += shift;
+            continue;
+        }
+        return None;
+    }
+    Some(delta)
+}
+
+/// 按 UTF-16 差值平移偏移；负增量不应把偏移压到 0 以下。
+fn adjust(offset: usize, delta: isize) -> usize {
+    if delta >= 0 {
+        offset + delta as usize
+    } else {
+        offset.saturating_sub(delta.unsigned_abs())
+    }
+}
+
 impl Storage {
+    /// 正文里的双链被改写后平移卡片来源锚点；卡片属派生数据，失败只影响定位提示。
+    pub(crate) async fn shift_card_sources(
+        &self,
+        note_path: &str,
+        edits: &[super::links::Edit],
+    ) -> Result<(), CommandError> {
+        self.inner.cards.shift_card_sources(note_path, edits)
+    }
+
     /// 查询指定笔记的全部卡片及调度状态。
     pub async fn list_note_cards(&self, note_path: &str) -> Result<Vec<NoteCard>, CommandError> {
         Ok(self

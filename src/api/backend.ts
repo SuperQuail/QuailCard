@@ -4,6 +4,7 @@ import type {
   AdoptCardsInput,
   AdoptCardsResult,
   AttachmentImage,
+  Backlink,
   BootstrapData,
   CardInput,
   ConnectionTestResult,
@@ -26,6 +27,7 @@ import type {
   ProviderSummary,
   ReviewCard,
   ReviewProgress,
+  RenameOutcome,
   ReviewRating,
   SearchResult,
   StudyStats,
@@ -98,6 +100,21 @@ export function readNoteAttachment(notePath: string, source: string): Promise<At
   return call<AttachmentImage>("read_note_attachment", { input: { notePath, source } });
 }
 
+/** 把笔记内图片作为位图写入系统剪贴板。 */
+export function copyNoteAttachmentImage(notePath: string, source: string): Promise<void> {
+  return call<void>("copy_note_attachment_image", { notePath, source });
+}
+
+/** 另存笔记内图片；返回实际保存路径，用户取消时返回 null。 */
+export function saveNoteAttachmentAs(notePath: string, source: string): Promise<string | null> {
+  return call<string | null>("save_note_attachment_as", { notePath, source });
+}
+
+/** 在系统文件管理器中定位并选中笔记内图片。 */
+export function revealNoteAttachment(notePath: string, source: string): Promise<void> {
+  return call<void>("reveal_note_attachment", { notePath, source });
+}
+
 /** 查询全部笔记摘要。 */
 export function listNotes(): Promise<NoteSummary[]> {
   return call<NoteSummary[]>("list_notes");
@@ -123,24 +140,34 @@ export function createFolder(path: string): Promise<void> {
   return call<void>("create_folder", { path });
 }
 
-/** 重命名笔记文件。 */
-export function renameNoteFile(oldPath: string, newPath: string): Promise<string> {
-  return call<string>("rename_note_file", { oldPath, newPath });
+/** 重命名笔记文件；返回值带上被联动改写链接的笔记，供前端失效对应标签缓存。 */
+export function renameNoteFile(oldPath: string, newPath: string): Promise<RenameOutcome> {
+  return call<RenameOutcome>("rename_note_file", { oldPath, newPath });
 }
 
-/** 删除笔记文件及其卡片。 */
-export function deleteNoteFile(path: string): Promise<void> {
-  return call<void>("delete_note_file", { path });
+/** 设置改名时是否自动更新引用链接；返回后端持久化后的值。 */
+export function setUpdateLinksOnRename(enabled: boolean): Promise<boolean> {
+  return call<boolean>("set_update_links_on_rename", { enabled });
 }
 
-/** 重命名文件夹。 */
-export function renameFolder(oldPath: string, newPath: string): Promise<string> {
-  return call<string>("rename_folder", { oldPath, newPath });
+/** 查询指向某篇笔记的全部反链。 */
+export function getBacklinks(path: string): Promise<Backlink[]> {
+  return call<Backlink[]>("get_backlinks", { path });
 }
 
-/** 删除文件夹及其内容。 */
-export function deleteFolder(path: string): Promise<void> {
-  return call<void>("delete_folder", { path });
+/** 删除笔记文件及其卡片；`permanent` 由前端按设置显式传入，false 走系统回收站。 */
+export function deleteNoteFile(path: string, permanent: boolean): Promise<void> {
+  return call<void>("delete_note_file", { path, permanent });
+}
+
+/** 重命名文件夹；与单篇改名同构，返回联动改写结果。 */
+export function renameFolder(oldPath: string, newPath: string): Promise<RenameOutcome> {
+  return call<RenameOutcome>("rename_folder", { oldPath, newPath });
+}
+
+/** 删除文件夹及其内容；`permanent` 与单篇删除同语义，必须显式给出策略。 */
+export function deleteFolder(path: string, permanent: boolean): Promise<void> {
+  return call<void>("delete_folder", { path, permanent });
 }
 
 /** 保存或更新单张卡片。 */
@@ -196,6 +223,11 @@ export function getStudyStats(): Promise<StudyStats> {
 /** 设置全局字号档位。 */
 export function setFontSize(fontSize: FontSizeId): Promise<string> {
   return call<string>("set_font_size", { fontSize });
+}
+
+/** 设置"删除笔记时跳过回收站直接永久删除"。 */
+export function setPermanentDelete(enabled: boolean): Promise<boolean> {
+  return call<boolean>("set_permanent_delete", { enabled });
 }
 
 /** 设置"使用问答时启用AI评分"。 */

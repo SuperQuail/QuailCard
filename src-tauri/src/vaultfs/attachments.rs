@@ -16,7 +16,8 @@ use crate::{
     },
 };
 
-const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+/// 单张图片体积上限：导入、读取、复制与另存共用同一约束。
+pub(super) const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 
 impl VaultState {
     /// 验证图片载荷并以 UUID v7 唯一文件名导入配置目录。
@@ -60,8 +61,26 @@ impl VaultState {
         &self,
         input: ReadNoteAttachmentInput,
     ) -> Result<AttachmentImage, CommandError> {
+        let target = self.attachment_file_path(&input.note_path, &input.source)?;
+        let bytes = super::attachment_actions::read_attachment_bytes(&target)?;
+        let mime_type = detect_image(&bytes)?.to_string();
+        Ok(AttachmentImage {
+            mime_type,
+            data_base64: general_purpose::STANDARD.encode(bytes),
+        })
+    }
+
+    /// 解析笔记引用的图片，返回 Vault 内已确认存在的绝对路径。
+    ///
+    /// 展示、复制、另存与"打开所在文件夹"共用同一条解析链：
+    /// 笔记必须存在、来源必须落在 Vault 内、目标必须是真实文件。
+    pub fn attachment_file_path(
+        &self,
+        note_path: &str,
+        source: &str,
+    ) -> Result<PathBuf, CommandError> {
         let root = self.require_root()?;
-        let note_relative = sanitize_relative(&input.note_path)?;
+        let note_relative = sanitize_relative(note_path)?;
         let note = root
             .join(&note_relative)
             .canonicalize()
@@ -72,33 +91,26 @@ impl VaultState {
         }
         let target_relative = resolve_markdown_source(
             note_relative.parent().unwrap_or_else(|| Path::new("")),
-            &input.source,
+            source,
         )?;
         let target = root
             .join(target_relative)
             .canonicalize()
             .map_err(|_| CommandError::new("ATTACHMENT_NOT_FOUND", "图片附件不存在或不可访问"))?;
         ensure_contained(&root, &target)?;
-        let metadata =
-            std::fs::metadata(&target).map_err(|error| file_error("读取图片附件失败", error))?;
-        if !metadata.file_type().is_file() {
+        if !target.is_file() {
             return Err(CommandError::new(
                 "ATTACHMENT_NOT_FOUND",
                 "图片附件不存在或不可访问",
             ));
         }
-        if metadata.len() > MAX_IMAGE_BYTES as u64 {
-            return Err(CommandError::validation("图片不能超过 10 MiB"));
-        }
-        let bytes = std::fs::read(target).map_err(|error| file_error("读取图片附件失败", error))?;
-        if bytes.len() > MAX_IMAGE_BYTES {
-            return Err(CommandError::validation("图片不能超过 10 MiB"));
-        }
-        let mime_type = detect_image(&bytes)?.to_string();
-        Ok(AttachmentImage {
-            mime_type,
-            data_base64: general_purpose::STANDARD.encode(bytes),
-        })
+        Ok(target)
+    }
+
+    /// 解析并读取笔记引用的图片字节：复制与另存共用同一套沙箱校验。
+    pub fn read_attachment(&self, note_path: &str, source: &str) -> Result<Vec<u8>, CommandError> {
+        let target = self.attachment_file_path(note_path, source)?;
+        super::attachment_actions::read_attachment_bytes(&target)
     }
 
     /// 获取已选择且规范化过的 Vault 根目录。
@@ -125,7 +137,7 @@ fn decode_image(encoded: &str) -> Result<Vec<u8>, CommandError> {
 }
 
 /// 通过文件签名识别受支持图片，不信任扩展名或声明类型。
-fn detect_image(bytes: &[u8]) -> Result<&'static str, CommandError> {
+pub(super) fn detect_image(bytes: &[u8]) -> Result<&'static str, CommandError> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         Ok("image/png")
     } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
@@ -150,7 +162,7 @@ fn normalize_mime(mime: &str) -> Result<&'static str, CommandError> {
 }
 
 /// MIME 类型决定托管文件扩展名，避免用户文件名伪装类型。
-fn extension_for_mime(mime: &str) -> &'static str {
+pub(super) fn extension_for_mime(mime: &str) -> &'static str {
     match mime {
         "image/png" => "png",
         "image/jpeg" => "jpg",

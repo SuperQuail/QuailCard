@@ -11,7 +11,7 @@ beforeEach(() => {
   lastNotePathChange.value = null;
   activeNotePath.value = "old/a.md";
   activeNoteContent.value = "初始";
-  notes.value = [{ path: "old/a.md", title: "a", tagsJson: "[]", mtime: 1, cardCount: 2, dueCount: 1 }];
+  notes.value = [{ path: "old/a.md", title: "a", tagsJson: "[]", aliases: [], mtime: 1, cardCount: 2, dueCount: 1 }];
   notePersistence.register("old/a.md", "初始");
   vi.mocked(backend.writeNote).mockResolvedValue(2);
   vi.mocked(backend.getStudyStats).mockRejectedValue(new Error("统计暂不可用"));
@@ -36,7 +36,7 @@ describe("重命名与保存协调", () => {
   test("先保存再改名，统计失败不阻止名称更新", async () => {
     const events: string[] = [];
     vi.mocked(backend.writeNote).mockImplementation(async () => { events.push("save"); return 2; });
-    vi.mocked(backend.renameNoteFile).mockImplementation(async () => { events.push("rename"); return "old/z.md"; });
+    vi.mocked(backend.renameNoteFile).mockImplementation(async () => { events.push("rename"); return { path: "old/z.md", updatedNotes: [], failedNotes: [] }; });
     vi.mocked(backend.listNotes).mockResolvedValue([{ ...notes.value[0], path: "old/z.md", title: "z" }]);
     updateNoteDraft("old/a.md", "刚输入");
     await renameNoteFile("old/a.md", "old/z.md");
@@ -56,7 +56,7 @@ describe("重命名与保存协调", () => {
     expect(noteOperationBusy.value).toBe(false);
   });
   test("列表刷新失败时保留已成功的目录改名", async () => {
-    vi.mocked(backend.renameFolder).mockResolvedValue("new");
+    vi.mocked(backend.renameFolder).mockResolvedValue({ path: "new", updatedNotes: [], failedNotes: [] });
     vi.mocked(backend.listNotes).mockRejectedValue(new Error("列表暂不可用"));
     await renameFolder("old", "new");
     expect(notes.value[0].path).toBe("new/a.md");
@@ -108,5 +108,36 @@ describe("后台生成笔记的打开同步", () => {
     expect(backend.listNotes).not.toHaveBeenCalled();
     expect(activeNotePath.value).toBeNull();
     expect(activeNoteContent.value).toBe("");
+  });
+});
+describe("改名联动改写引用链接", () => {
+  test("当前笔记的链接被改写后按磁盘内容重载编辑区", async () => {
+    activeNotePath.value = "other/x.md";
+    activeNoteContent.value = "旧正文";
+    vi.mocked(backend.renameNoteFile).mockResolvedValue({ path: "old/z.md", updatedNotes: ["other/x.md"], failedNotes: [] });
+    vi.mocked(backend.readNote).mockResolvedValue({ path: "other/x.md", title: "x", content: "见 [[old/z]]", mtime: 7 });
+    vi.mocked(backend.listNotes).mockResolvedValue([{ path: "old/z.md", title: "z", tagsJson: "[]", aliases: [], cardCount: 0, dueCount: 0, mtime: 7 }]);
+    await renameNoteFile("old/a.md", "old/z.md");
+    expect(backend.readNote).toHaveBeenCalledWith("other/x.md");
+    expect(activeNoteContent.value).toBe("见 [[old/z]]");
+  });
+  test("当前笔记不在改写名单时不动编辑区", async () => {
+    activeNotePath.value = "other/x.md";
+    vi.mocked(backend.renameNoteFile).mockResolvedValue({ path: "old/z.md", updatedNotes: [], failedNotes: [] });
+    vi.mocked(backend.listNotes).mockResolvedValue([{ path: "old/z.md", title: "z", tagsJson: "[]", aliases: [], cardCount: 0, dueCount: 0, mtime: 9 }]);
+    await renameNoteFile("old/a.md", "old/z.md");
+    expect(backend.readNote).not.toHaveBeenCalled();
+  });
+  test("改写失败的笔记以错误消息告知用户", async () => {
+    const { errorMessage } = await import("./uiStore");
+    // 前序用例可能留下延迟到队的统计失败回调，先清空并等一轮宏任务，避免它覆盖本次断言。
+    errorMessage.value = "";
+    vi.mocked(backend.getStudyStats).mockResolvedValue({ dueCount: 0 } as never);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    vi.mocked(backend.renameNoteFile).mockResolvedValue({ path: "old/z.md", updatedNotes: [], failedNotes: ["other/x.md", "other/y.md"] });
+    vi.mocked(backend.listNotes).mockResolvedValue([{ path: "old/z.md", title: "z", tagsJson: "[]", aliases: [], cardCount: 0, dueCount: 0, mtime: 9 }]);
+    await renameNoteFile("old/a.md", "old/z.md");
+    expect(errorMessage.value).toContain("2 篇笔记的引用未能更新");
+    expect(errorMessage.value).toContain("other/x.md");
   });
 });

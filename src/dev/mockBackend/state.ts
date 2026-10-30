@@ -48,6 +48,10 @@ export let cardSequence = 0;
 export let vaultProtection: "default" | "password" = "default";
 export let vaultLocked = false;
 export let aiGradingEnabled = false;
+/** 演示用「永久删除」开关：与后端设置同形，不影响演示环境的删除行为。 */
+export let permanentDelete = false;
+/** 演示用「改名时更新引用链接」开关：演示环境不复刻改写逻辑，仅回显状态。 */
+export let updateLinksOnRename = true;
 /** 演示用历史 Vault 路径，仅用于填充“最近打开”列表。 */
 export const recentVaults: string[] = ["D:\QuailVault", "D:\Documents\MyKnowledge"];
 
@@ -82,6 +86,12 @@ export function setVaultLocked(value: boolean): void {
 }
 export function setAiGradingEnabled(value: boolean): void {
   aiGradingEnabled = value;
+}
+export function setPermanentDelete(value: boolean): void {
+  permanentDelete = value;
+}
+export function setUpdateLinksOnRename(value: boolean): void {
+  updateLinksOnRename = value;
 }
 export function setActiveProviderId(value: string): void {
   mockActiveProviderId = value;

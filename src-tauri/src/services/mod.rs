@@ -11,6 +11,9 @@ mod generation_executor;
 pub(crate) mod generation_ports;
 mod generation_round;
 mod generation_tasks;
+pub(crate) mod link_update;
+#[cfg(test)]
+mod link_update_tests;
 mod openai_oauth;
 mod openai_oauth_credential;
 mod openai_oauth_helpers;

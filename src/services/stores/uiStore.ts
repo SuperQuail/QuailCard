@@ -8,6 +8,16 @@ import type { FontSizeId, ThemeId } from "../../domain/types";
  */
 export const theme = ref<ThemeId>(localStorage.getItem("quailcard.theme") === "dark" ? "dark" : "light");
 export const fontSize = ref<FontSizeId>("comfortable");
+/** 删除笔记时是否跳过系统回收站直接永久删除（全局设置，随启动数据下发）。 */
+export const permanentDelete = ref(false);
+/** 改名/移动笔记时是否自动改写其他笔记里的双链（全局设置，随启动数据下发）。 */
+export const updateLinksOnRename = ref(true);
+/** 右栏页签：卡片 / 大纲 / 反链。纯界面状态，不落盘。 */
+export type SidePanelTab = "cards" | "outline" | "backlinks";
+export const sidePanelTab = ref<SidePanelTab>("cards");
+/** 左栏页签：文件 / 标签。纯界面状态，不落盘。 */
+export type LeftSidebarTab = "files" | "tags";
+export const leftSidebarTab = ref<LeftSidebarTab>("files");
 export const loading = ref(false);
 export const initialized = ref(false);
 export const errorMessage = ref("");
@@ -28,6 +38,16 @@ export function applyTheme(): void {
 export async function setFontSize(next: FontSizeId): Promise<void> {
   fontSize.value = (await backend.setFontSize(next)) as FontSizeId;
   applyFontSize();
+}
+
+/** 设置永久删除开关：以后端持久化结果为准，失败时保持原值。 */
+export async function setPermanentDelete(enabled: boolean): Promise<void> {
+  permanentDelete.value = await backend.setPermanentDelete(enabled);
+}
+
+/** 设置改名联动开关：以后端持久化结果为准，失败时保持原值。 */
+export async function setUpdateLinksOnRename(enabled: boolean): Promise<void> {
+  updateLinksOnRename.value = await backend.setUpdateLinksOnRename(enabled);
 }
 
 /** 应用字号 CSS 变量到正文容器。 */

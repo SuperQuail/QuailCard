@@ -24,9 +24,37 @@ pub struct NoteSummary {
     pub path: String,
     pub title: String,
     pub tags_json: String,
+    /// frontmatter 里声明的别名；双链解析与补全都用它，且与标题同等可解析。
+    pub aliases: Vec<String>,
     pub card_count: i64,
     pub due_count: i64,
     pub mtime: i64,
+}
+
+/// 改名结果：除新路径外，回报被联动改写链接的笔记，便于前端刷新已打开的标签。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameOutcome {
+    /// 重命名后的实际路径（父目录已存在时可能与请求不同）。
+    pub path: String,
+    /// 正文里指向它的链接被改写的笔记路径。
+    pub updated_notes: Vec<String>,
+    /// 改写失败的笔记路径；文件改名本身不回滚，这些笔记里的旧链接会失效。
+    pub failed_notes: Vec<String>,
+}
+
+/// 反链条目：一篇笔记正文里指向当前笔记的一处引用。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Backlink {
+    /// 引用方笔记的 Vault 相对路径。
+    pub source_path: String,
+    /// 引用方笔记标题，前端直接展示，不必再查索引。
+    pub source_title: String,
+    /// 链接所在行号，从 1 开始；点击反链时用它定位。
+    pub line: usize,
+    /// 该行去首尾空白后的预览文本。
+    pub snippet: String,
 }
 
 /// 读取到的笔记文件内容。
@@ -292,6 +320,10 @@ pub struct BootstrapData {
     pub vault_path: Option<String>,
     pub recent_vaults: Vec<String>,
     pub ai_grading_enabled: bool,
+    /// 删除笔记时是否跳过回收站直接永久删除。
+    pub permanent_delete: bool,
+    /// 改名/移动笔记时是否自动改写其他笔记里的双链。
+    pub update_links_on_rename: bool,
 }
 
 /// 学习统计。

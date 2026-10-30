@@ -14,23 +14,76 @@ pub(crate) fn note_title_from_path(path: &str) -> String {
         .to_string()
 }
 
+/// 行内标签的最大数量：超过后忽略，避免索引条目被长文档拖大。
+const MAX_TAGS: usize = 20;
+/// 单个标签的最大字符数：超长的多半是正文里的 # 号噪声。
+const MAX_TAG_CHARS: usize = 50;
+
 /// 从正文提取行内标签，去重并限制数量。
-pub(crate) fn extract_tags(content: &str) -> Vec<String> {
+///
+/// 契约：`#` 必须位于词首，且跳过围栏代码块与行内代码——代码里的 `#include`
+/// 不是标签；行首的 `# ` 是标题，去掉 `#` 后为空，自然被丢弃。
+pub(crate) fn extract_tags(body: &str) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut tags = Vec::new();
-    for word in content.split_whitespace() {
-        if let Some(tag) = word.strip_prefix('#') {
-            let tag =
-                tag.trim_matches(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '/')));
-            if !tag.is_empty() && tag.chars().count() <= 50 && seen.insert(tag.to_string()) {
+    let mut fence: Option<&'static str> = None;
+    for line in body.lines() {
+        let trimmed = line.trim_start();
+        if let Some(marker) = fence {
+            if trimmed.starts_with(marker) {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some(marker) = fence_marker(trimmed) {
+            fence = Some(marker);
+            continue;
+        }
+        for word in strip_inline_code(line).split_whitespace() {
+            let Some(candidate) = word.strip_prefix('#') else {
+                continue;
+            };
+            let tag = candidate
+                .trim_matches(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '/')));
+            if !tag.is_empty()
+                && tag.chars().count() <= MAX_TAG_CHARS
+                && seen.insert(tag.to_string())
+            {
                 tags.push(tag.to_string());
-                if tags.len() >= 20 {
-                    break;
+                if tags.len() >= MAX_TAGS {
+                    return tags;
                 }
             }
         }
     }
     tags
+}
+
+/// 识别围栏代码块的开始标记；返回用于匹配结束行的前缀。
+fn fence_marker(trimmed: &str) -> Option<&'static str> {
+    if trimmed.starts_with("```") {
+        Some("```")
+    } else if trimmed.starts_with("~~~") {
+        Some("~~~")
+    } else {
+        None
+    }
+}
+
+/// 去掉行内代码片段，避免把 `#include` 之类的代码内容当成标签。
+fn strip_inline_code(line: &str) -> String {
+    let mut result = String::with_capacity(line.len());
+    let mut in_code = false;
+    for character in line.chars() {
+        if character == '`' {
+            in_code = !in_code;
+            continue;
+        }
+        if !in_code {
+            result.push(character);
+        }
+    }
+    result
 }
 
 /// 在原文中定位查询词并截取带标记的片段。

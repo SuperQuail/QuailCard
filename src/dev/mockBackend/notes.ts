@@ -1,4 +1,4 @@
-import type { NoteCard, NoteFile, NoteSummary, SearchResult } from "../../domain/types";
+import type { Backlink, NoteCard, NoteFile, NoteSummary, RenameOutcome, SearchResult } from "../../domain/types";
 import { cards, notes, type MockCard } from "./state";
 
 /**
@@ -46,6 +46,7 @@ export function noteSummaries(): NoteSummary[] {
       path,
       title: titleFromPath(path),
       tagsJson: JSON.stringify(tagsFromContent(note.content)),
+      aliases: [],
       cardCount,
       dueCount,
       mtime: note.mtime,
@@ -83,8 +84,8 @@ export function createNoteFile(folder: string, rawTitle: string): NoteFile {
   return { path, title: rawTitle, content, mtime: now };
 }
 
-/** 重命名笔记并同步其下卡片的 notePath。 */
-export function renameNoteFile(oldPath: string, newPath: string): string {
+/** 重命名笔记并同步其下卡片的 notePath；演示环境不复刻链接改写，故 updatedNotes 恒为空。 */
+export function renameNoteFile(oldPath: string, newPath: string): RenameOutcome {
   const note = notes.get(oldPath);
   if (!note) {
     throw new Error("笔记文件不存在");
@@ -96,7 +97,7 @@ export function renameNoteFile(oldPath: string, newPath: string): string {
       card.notePath = newPath;
     }
   }
-  return newPath;
+  return { path: newPath, updatedNotes: [], failedNotes: [] };
 }
 
 /** 删除笔记及其下全部卡片。 */
@@ -110,7 +111,7 @@ export function deleteNoteFile(path: string): void {
 }
 
 /** 重命名文件夹：把前缀匹配的笔记与卡片路径一并改前缀。 */
-export function renameFolder(oldPath: string, newPath: string): string {
+export function renameFolder(oldPath: string, newPath: string): RenameOutcome {
   for (const [path, note] of [...notes.entries()]) {
     if (path === oldPath || path.startsWith(`${oldPath}/`)) {
       const next = newPath + path.slice(oldPath.length);
@@ -123,7 +124,7 @@ export function renameFolder(oldPath: string, newPath: string): string {
       card.notePath = newPath + card.notePath.slice(oldPath.length);
     }
   }
-  return newPath;
+  return { path: newPath, updatedNotes: [], failedNotes: [] };
 }
 
 /** 删除文件夹及其下全部内容。 */
@@ -138,6 +139,25 @@ export function deleteFolder(folder: string): void {
       cards.delete(id);
     }
   }
+}
+
+/**
+ * 反链查询：演示环境只做 [[目标]] 的字面匹配，不实现同名/别名的解析优先级。
+ * 真实规则在 Rust 后端，前端演示不需要复刻。
+ */
+export function backlinks(path: string): Backlink[] {
+  const title = titleFromPath(path).toLowerCase();
+  const result: Backlink[] = [];
+  const needle = "[[" + title;
+  for (const [sourcePath, note] of notes) {
+    if (sourcePath === path) continue;
+    note.content.split(/\r?\n/).forEach((line, index) => {
+      if (line.toLowerCase().includes(needle)) {
+        result.push({ sourcePath, sourceTitle: titleFromPath(sourcePath), line: index + 1, snippet: line.trim() });
+      }
+    });
+  }
+  return result;
 }
 
 /** 全文搜索笔记与卡片（演示级：朴素包含匹配）。 */

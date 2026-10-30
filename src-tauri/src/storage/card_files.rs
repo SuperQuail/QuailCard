@@ -9,6 +9,7 @@ use std::{
 };
 
 use super::{
+    card_detach::is_detached_relative,
     card_records::{CardRecord, NoteCardsFile},
     cards::CardState,
     envelope::{self, CorruptPolicy},
@@ -52,6 +53,10 @@ pub(super) fn load_card_files(root: &Path, state: &mut CardState) -> Result<(), 
                 Ok(relative) => relative.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
             };
+            // 隔离区是被删除笔记的卡片备份，不属于 active 数据，加载时必须跳过。
+            if is_detached_relative(&relative) {
+                continue;
+            }
             // 顶层 config.json 是附件目录配置，不属于卡片数据。
             if relative == "config.json"
                 || relative.starts_with("agent/.")
@@ -110,7 +115,7 @@ fn is_video_internal_file(root: &Path, path: &Path, relative: &str) -> bool {
 }
 
 /// 从镜像文件相对路径推导笔记路径（词.json -> 词.md）。
-fn derive_note_path(relative: &str) -> String {
+pub(super) fn derive_note_path(relative: &str) -> String {
     let trimmed = relative.trim_end_matches(".json");
     format!("{trimmed}.md")
 }
@@ -137,7 +142,7 @@ pub(super) fn persist_cards(
     if cards.is_empty() {
         if path.exists() {
             std::fs::remove_file(&path)?;
-            cleanup_empty_parents(root, path.parent());
+            cleanup_empty_parents(root, Some(path.as_path()));
         }
         return Ok(());
     }
@@ -205,12 +210,15 @@ pub(super) fn remove_note_cards(
     let path = root.join(card_relative_path(note_path)?);
     if path.exists() {
         std::fs::remove_file(&path)?;
-        cleanup_empty_parents(root, path.parent());
+        cleanup_empty_parents(root, Some(path.as_path()));
     }
     Ok(())
 }
 
 /// 尽力清理移动/删除后留下的空镜像目录，直到 .quailcard 根为止。
+///
+/// 契约：`start` 传**被删除文件的路径**（不是它的父目录）——函数内部从
+/// `start.parent()` 开始向上删，传父目录会漏掉最内层空目录。
 pub(super) fn cleanup_empty_parents(root: &Path, start: Option<&Path>) {
     let mut current = match start.and_then(Path::parent) {
         Some(parent) => parent.to_path_buf(),

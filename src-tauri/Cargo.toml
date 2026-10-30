@@ -37,6 +37,13 @@ futures-util = "0.3.33"
 rand = "0.8"
 toml = "1.1.4"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
+# 删除默认走系统回收站；固定版本避免上游行为漂移影响删除语义。
+trash = { version = "=5.2.9", default-features = false, features = ["coinit_multithreaded"] }
+# frontmatter 只做容错读取；固定版本避免上游解析行为漂移改写用户笔记。
+yaml-rust2 = "=0.13.0"
+# 图片右键菜单：位图写入系统剪贴板，需要独立解码 PNG/JPEG/WebP。
+arboard = "3"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 
 [dev-dependencies]
 # 并发与退避测试使用虚拟时钟，不依赖真实等待时长。

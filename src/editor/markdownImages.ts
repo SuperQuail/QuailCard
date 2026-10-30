@@ -13,6 +13,15 @@ export interface MarkdownImageReference {
   source: string;
 }
 
+/** 图片预览的可选交互钩子：编辑器只上报引用与事件，菜单形态由壳层决定。 */
+export interface MarkdownImageOptions {
+  /** 右键已加载图片时回调；不提供则保留原生菜单，编辑模式不吞掉用户默认操作。 */
+  onContextMenu?: (image: MarkdownImageReference, event: MouseEvent) => void;
+}
+
+/** 插件构造期创建的右键派发函数，身份稳定，可安全交给会被复用的 widget。 */
+type ContextMenuDispatcher = (image: MarkdownImageReference, event: MouseEvent) => void;
+
 type ImageState =
   | { status: "loading" }
   | { status: "loaded"; dataUrl: string }
@@ -60,16 +69,22 @@ class MarkdownImageWidget extends WidgetType {
   /** 图片载荷与源码位置一起保存，异步刷新后仍能正确回到源码。 */
   constructor(
     private readonly from: number,
+    private readonly to: number,
     private readonly alt: string,
     private readonly source: string,
     private readonly imageState: ImageState,
+    private readonly dispatchContextMenu: ContextMenuDispatcher | undefined,
   ) {
     super();
   }
 
-  /** 相同载荷且位置未变时复用 DOM，减少滚动时闪烁；位置变化必须重建，否则点击会跳错位置。 */
+  /**
+   * 相同载荷且位置未变时复用 DOM，减少滚动时闪烁；位置变化必须重建，否则点击会跳错位置。
+   * 派发函数不参与比较：它在插件构造期创建且身份稳定，复用 DOM 后仍指向当前回调。
+   */
   eq(other: MarkdownImageWidget): boolean {
     return other.from === this.from
+      && other.to === this.to
       && other.alt === this.alt
       && other.source === this.source
       && JSON.stringify(other.imageState) === JSON.stringify(this.imageState);
@@ -88,6 +103,16 @@ class MarkdownImageWidget extends WidgetType {
       image.alt = this.alt;
       image.title = this.source;
       wrapper.append(image);
+      // 只有解码成功的图片才有可复制/定位的文件；加载中与失败态预览不响应菜单。
+      if (this.dispatchContextMenu) {
+        wrapper.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.dispatchContextMenu?.({
+            from: this.from, to: this.to, alt: this.alt, source: this.source,
+          }, event);
+        });
+      }
     } else {
       wrapper.textContent = this.imageState.status === "loading" ? "正在载入图片…" : `图片无法显示：${this.alt || this.source}`;
     }
@@ -101,10 +126,20 @@ class MarkdownImageWidget extends WidgetType {
 export function markdownImagePreview(
   notePath: string,
   resolver: (notePath: string, source: string) => Promise<string>,
+  options: MarkdownImageOptions = {},
 ): Extension {
   return ViewPlugin.fromClass(class {
     decorations: DecorationSet = Decoration.none;
     private readonly states = new Map<string, ImageState>();
+    /**
+     * 插件实例内唯一的右键派发函数。
+     *
+     * 原因：widget.eq 只比较可序列化载荷，函数身份无法比较；若每个 widget 各自
+     * 捕获闭包，DOM 复用后会继续用旧 options。这里每个插件只建一次，widget 复用安全。
+     */
+    private readonly dispatchContextMenu: ContextMenuDispatcher | undefined = options.onContextMenu
+      ? (image, event) => { options.onContextMenu?.(image, event); }
+      : undefined;
     private active = true;
 
     /** 初始化可见图片并发起缺失资源读取。 */
@@ -160,7 +195,8 @@ export function markdownImagePreview(
         if (!visible || active) {
           continue;
         }
-        const widget = new MarkdownImageWidget(image.from, image.alt, image.source, this.stateFor(image.source));
+        const widget = new MarkdownImageWidget(image.from, image.to, image.alt, image.source,
+          this.stateFor(image.source), this.dispatchContextMenu);
         ranges.push(Decoration.replace({ widget }).range(image.from, image.to));
       }
       return Decoration.set(ranges, true);

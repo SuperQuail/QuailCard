@@ -6,9 +6,18 @@ use std::{
 use crate::error::CommandError;
 
 mod agent;
+mod attachment_actions;
 mod attachments;
 mod config;
+mod remove;
 
+pub(crate) use attachment_actions::{
+    attachment_file_hints, read_attachment_bytes, write_replacing,
+};
+pub(crate) use remove::remover_for;
+
+#[cfg(test)]
+mod attachment_actions_tests;
 #[cfg(test)]
 mod attachments_tests;
 
@@ -141,16 +150,6 @@ impl VaultState {
         Ok(new_relative)
     }
 
-    /// 删除笔记文件。
-    pub fn delete_note(&self, relative: &str) -> Result<(), CommandError> {
-        let path = self.resolve(relative)?;
-        if !path.is_file() {
-            return Err(CommandError::new("NOTE_NOT_FOUND", "笔记文件不存在"));
-        }
-        std::fs::remove_file(&path)?;
-        Ok(())
-    }
-
     /// 重命名或移动文件夹。
     pub fn rename_folder(&self, old: &str, new: &str) -> Result<String, CommandError> {
         let source = self.resolve(old)?;
@@ -166,16 +165,6 @@ impl VaultState {
         }
         std::fs::rename(&source, &target)?;
         Ok(new_relative)
-    }
-
-    /// 删除文件夹及其全部内容。
-    pub fn delete_folder(&self, relative: &str) -> Result<(), CommandError> {
-        let path = self.resolve(relative)?;
-        if !path.is_dir() {
-            return Err(CommandError::new("FOLDER_NOT_FOUND", "文件夹不存在"));
-        }
-        std::fs::remove_dir_all(&path)?;
-        Ok(())
     }
 
     /// 扫描 Vault 中全部 .md 文件，返回相对路径、内容与修改时间。

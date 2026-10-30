@@ -28,6 +28,8 @@ defineProps<{
   activeProviderId: string;
   vaultStatus: VaultStatus | null;
   aiGradingEnabled: boolean;
+  permanentDelete: boolean;
+  updateLinksOnRename: boolean;
   attachmentFolder: string;
   attachmentFolderSaving: boolean;
   attachmentFolderStatus: string;
@@ -43,6 +45,8 @@ const emit = defineEmits<{
   "set-active-provider": [providerId: string];
   "set-vault-password": [password: string];
   "update-ai-grading": [enabled: boolean];
+  "update-permanent-delete": [enabled: boolean];
+  "update-links-on-rename": [enabled: boolean];
   "save-attachment-folder": [attachmentFolder: string];
   "reveal-data-folder": [target: DataFolderTarget];
 }>();
@@ -92,6 +96,8 @@ const tabs: Array<{ id: TabId; label: string; icon: typeof Monitor }> = [
             :vault-path="vaultPath"
             :recent-vaults="recentVaults"
             :ai-grading-enabled="aiGradingEnabled"
+            :permanent-delete="permanentDelete"
+            :update-links-on-rename="updateLinksOnRename"
             :attachment-folder="attachmentFolder"
             :attachment-folder-saving="attachmentFolderSaving"
             :attachment-folder-status="attachmentFolderStatus"
@@ -99,6 +105,8 @@ const tabs: Array<{ id: TabId; label: string; icon: typeof Monitor }> = [
             @change-vault="emit('change-vault')"
             @open-recent-vault="emit('open-recent-vault', $event)"
             @update-ai-grading="emit('update-ai-grading', $event)"
+            @update-permanent-delete="emit('update-permanent-delete', $event)"
+            @update-links-on-rename="emit('update-links-on-rename', $event)"
             @save-attachment-folder="emit('save-attachment-folder', $event)"
             @reveal-data-folder="emit('reveal-data-folder', $event)"
           />

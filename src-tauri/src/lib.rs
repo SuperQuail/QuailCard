@@ -19,9 +19,11 @@ mod attachment_commands;
 mod card_commands;
 mod card_generation;
 mod commands;
+mod commands_links;
 mod dictionary;
 mod error;
 mod generation_commands;
+mod image_clipboard;
 mod models;
 mod paths;
 mod scheduler;
@@ -101,6 +103,9 @@ pub fn run() {
             attachment_commands::set_attachment_folder,
             attachment_commands::import_note_attachment,
             attachment_commands::read_note_attachment,
+            attachment_commands::copy_note_attachment_image,
+            attachment_commands::save_note_attachment_as,
+            attachment_commands::reveal_note_attachment,
             // Vault 与笔记
             commands::open_vault,
             commands::get_vault_path,
@@ -116,6 +121,7 @@ pub fn run() {
             commands::delete_note_file,
             commands::rename_folder,
             commands::delete_folder,
+            commands_links::get_backlinks,
             // 卡片与搜索
             card_commands::save_card,
             card_commands::delete_card,
@@ -155,6 +161,8 @@ pub fn run() {
             commands::set_font_size,
             commands::get_study_stats,
             commands::set_ai_grading_enabled,
+            commands::set_permanent_delete,
+            commands::set_update_links_on_rename,
             commands::set_active_provider,
             commands::save_provider,
             commands::delete_provider,

@@ -19,12 +19,22 @@
 
 mod adoption;
 pub(crate) mod agent;
+mod backlinks;
+#[cfg(test)]
+mod backlinks_tests;
+mod card_detach;
 mod card_files;
 mod card_records;
 mod cards;
 pub(crate) mod envelope;
+mod frontmatter;
+#[cfg(test)]
+mod frontmatter_tests;
 mod generation_context;
-mod helpers;
+pub(crate) mod helpers;
+pub(crate) mod links;
+#[cfg(test)]
+mod links_tests;
 mod notes;
 #[cfg(test)]
 mod notes_tests;

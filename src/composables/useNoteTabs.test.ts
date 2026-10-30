@@ -10,7 +10,7 @@ afterEach(() => { scopes.splice(0).forEach((scope) => scope.stop()); });
 
 /** 构造完整领域摘要，路径就是测试身份，不访问磁盘。 */
 function note(path: string): NoteSummary {
-  return { path, title: path.replace(/\.md$/, ""), tagsJson: "[]", cardCount: 0, dueCount: 0, mtime: 0 };
+  return { path, title: path.replace(/\.md$/, ""), tagsJson: "[]", aliases: [], cardCount: 0, dueCount: 0, mtime: 0 };
 }
 
 /** 显式控制保存或选中完成时机，不依赖真实计时器。 */

@@ -11,9 +11,13 @@ import {
   mockActiveProviderId,
   mockProviders,
   notes,
+  permanentDelete,
   recentVaults,
+  updateLinksOnRename,
   setAiGradingEnabled,
   setFontSize,
+  setPermanentDelete,
+  setUpdateLinksOnRename,
   setVaultLocked,
   setVaultPath,
   setVaultProtection,
@@ -47,6 +51,8 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
         vaultPath,
         recentVaults: [...recentVaults],
         aiGradingEnabled,
+        permanentDelete,
+        updateLinksOnRename,
       };
       return data as T;
     }
@@ -74,6 +80,17 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
       const input = args?.input as { notePath: string; source: string };
       return attachmentsDomain.readNoteAttachment(input.notePath, input.source) as T;
     }
+    case "copy_note_attachment_image":
+      // 演示环境不写系统剪贴板，只确认引用能解析到图片，与真机失败路径保持一致。
+      attachmentsDomain.copyNoteAttachmentImage(String(args?.notePath ?? ""), String(args?.source ?? ""));
+      return undefined as T;
+    case "save_note_attachment_as":
+      // 浏览器无法弹出原生保存对话框，返回仿真路径；返回值形状与后端一致。
+      return attachmentsDomain.saveNoteAttachmentAs(String(args?.notePath ?? ""), String(args?.source ?? "")) as T;
+    case "reveal_note_attachment":
+      // 演示环境没有系统文件管理器，确认图片存在后静默成功。
+      attachmentsDomain.revealNoteAttachment(String(args?.notePath ?? ""), String(args?.source ?? ""));
+      return undefined as T;
     case "list_notes":
       return notesDomain.noteSummaries() as T;
     case "read_note":
@@ -90,11 +107,13 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
     case "rename_note_file":
       return notesDomain.renameNoteFile(String(args?.oldPath ?? ""), String(args?.newPath ?? "")) as T;
     case "delete_note_file":
+      // 演示环境没有系统回收站：接收 permanent 但行为一致，不复刻后端策略。
       notesDomain.deleteNoteFile(String(args?.path ?? ""));
       return undefined as T;
     case "rename_folder":
       return notesDomain.renameFolder(String(args?.oldPath ?? ""), String(args?.newPath ?? "")) as T;
     case "delete_folder":
+      // 与单篇删除相同：permanent 仅作为契约参数被接收。
       notesDomain.deleteFolder(String(args?.path ?? ""));
       return undefined as T;
     case "save_card": {
@@ -135,6 +154,15 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
     case "set_ai_grading_enabled":
       setAiGradingEnabled(Boolean(args?.enabled));
       return aiGradingEnabled as T;
+    case "set_permanent_delete":
+      // 演示环境就地保存开关并回显，未持久化。
+      setPermanentDelete(Boolean(args?.enabled));
+      return permanentDelete as T;
+    case "set_update_links_on_rename":
+      setUpdateLinksOnRename(Boolean(args?.enabled));
+      return updateLinksOnRename as T;
+    case "get_backlinks":
+      return notesDomain.backlinks(String(args?.path ?? "")) as T;
     case "list_providers":
       return providersDomain.listProviders() as T;
     case "set_active_provider":

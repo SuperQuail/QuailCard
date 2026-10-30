@@ -3,12 +3,20 @@ import { undo, undoDepth, redo } from "@codemirror/commands";
 import { captureCardSource } from "../domain/cardSource";
 import type { NoteCard } from "../domain/types";
 import { importImageAttachment } from "../services/attachmentService";
+import { copyAttachmentImage, revealAttachment, saveAttachmentAs } from "../services/attachmentActions";
 import { EditorView } from "@codemirror/view";
 import { afterEach, expect, test, vi } from "vitest";
 import EditorPane from "./EditorPane.vue";
 
 vi.mock("../services/attachmentService", () => ({
   importImageAttachment: vi.fn(), resolveAttachmentDataUrl: vi.fn().mockResolvedValue("data:image/png;base64,cG5n"),
+}));
+
+// 图片菜单的动作全部经服务层转发；编辑器只负责把引用和坐标交给用例。
+vi.mock("../services/attachmentActions", () => ({
+  copyAttachmentImage: vi.fn().mockResolvedValue(undefined),
+  saveAttachmentAs: vi.fn().mockResolvedValue(null),
+  revealAttachment: vi.fn().mockResolvedValue(undefined),
 }));
 const mounted: ReturnType<typeof mount>[] = [];
 /** 清理编辑器实例与全局选区监听，避免后续测试收到残留事件。 */
@@ -173,5 +181,32 @@ test("切走再切回后旧图片请求不会污染恢复的笔记", async () =>
   expect(current(wrapper).state.doc.toString()).toContain("![new](attachments/new.png)");
   expect(wrapper.emitted("save-content")).toHaveLength(1);
   expect(wrapper.emitted("save-content")![0][0]).toBe("课程/笔记.md");
+});
+
+/** 图片右键菜单只上报引用；复制动作必须经服务层转发并在动作后关闭菜单。 */
+test("右键图片弹出菜单并复制图片", async () => {
+  const wrapper = mount(EditorPane, { attachTo: document.body, props: {
+    notePath: "课程/配图.md", content: "![结构图](../attachments/map.webp)\n\n正文", dark: false, panelOpen: false,
+  } });
+  mounted.push(wrapper);
+  const view = current(wrapper);
+  // 光标停在图片外，预览才会替换源码；否则选区会强制回到源码。
+  view.dispatch({ selection: { anchor: view.state.doc.length } });
+  await flushPromises();
+  wrapper.get(".qc-image-preview.is-loaded").element.dispatchEvent(
+    new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 80 }),
+  );
+  await flushPromises();
+  const menu = document.body.querySelector<HTMLElement>('[role="menu"]');
+  expect(menu).not.toBeNull();
+  Array.from(menu!.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+    .find((button) => button.textContent?.includes("复制图片"))!
+    .click();
+  await flushPromises();
+  expect(copyAttachmentImage).toHaveBeenCalledTimes(1);
+  expect(copyAttachmentImage).toHaveBeenCalledWith("课程/配图.md", "../attachments/map.webp");
+  expect(document.body.querySelector('[role="menu"]')).toBeNull();
+  expect(saveAttachmentAs).not.toHaveBeenCalled();
+  expect(revealAttachment).not.toHaveBeenCalled();
 });
 

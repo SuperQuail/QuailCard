@@ -28,6 +28,8 @@ pub(crate) struct SettingsFile {
     pub(crate) ui: UiSettings,
     /// Vault 相关状态。
     pub(crate) vault: VaultSettings,
+    /// 文件操作设置。
+    pub(crate) files: FileSettings,
     /// 视频转笔记设置。
     pub(crate) video: VideoSettings,
     pub(crate) agent: crate::agent_execution_settings::AgentExecutionSettings,
@@ -40,6 +42,7 @@ impl Default for SettingsFile {
             format_version: envelope::CURRENT_FORMAT_VERSION,
             ui: UiSettings::default(),
             vault: VaultSettings::default(),
+            files: FileSettings::default(),
             video: VideoSettings::default(),
             agent: crate::agent_execution_settings::AgentExecutionSettings::default(),
         }
@@ -62,6 +65,26 @@ impl Default for UiSettings {
         Self {
             font_size: DEFAULT_FONT_SIZE.to_string(),
             ai_grading_enabled: false,
+        }
+    }
+}
+
+/// 文件小节：删除行为与改名联动。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub(crate) struct FileSettings {
+    /// 删除时跳过回收站直接永久删除；默认 false 表示走回收站、可还原。
+    pub(crate) permanent_delete: bool,
+    /// 改名/移动笔记时是否自动改写其他笔记里指向它的双链；默认开启。
+    pub(crate) update_links_on_rename: bool,
+}
+
+impl Default for FileSettings {
+    /// 默认走回收站、改名时联动更新链接：两个都是用户最不容易踩坑的选择。
+    fn default() -> Self {
+        Self {
+            permanent_delete: false,
+            update_links_on_rename: true,
         }
     }
 }
@@ -113,6 +136,35 @@ impl Storage {
     pub async fn set_ai_grading_enabled(&self, enabled: bool) -> Result<(), CommandError> {
         let mut settings = self.inner.settings.lock().await;
         settings.ui.ai_grading_enabled = enabled;
+        self.persist_settings(&settings)
+    }
+
+    /// 读取"删除时跳过回收站"设置，默认关闭。
+    pub async fn get_permanent_delete(&self) -> bool {
+        self.inner.settings.lock().await.files.permanent_delete
+    }
+
+    /// 持久化"删除时跳过回收站"设置。
+    pub async fn set_permanent_delete(&self, enabled: bool) -> Result<(), CommandError> {
+        let mut settings = self.inner.settings.lock().await;
+        settings.files.permanent_delete = enabled;
+        self.persist_settings(&settings)
+    }
+
+    /// 读取"改名时更新引用链接"设置，默认开启。
+    pub async fn get_update_links_on_rename(&self) -> bool {
+        self.inner
+            .settings
+            .lock()
+            .await
+            .files
+            .update_links_on_rename
+    }
+
+    /// 持久化"改名时更新引用链接"设置。
+    pub async fn set_update_links_on_rename(&self, enabled: bool) -> Result<(), CommandError> {
+        let mut settings = self.inner.settings.lock().await;
+        settings.files.update_links_on_rename = enabled;
         self.persist_settings(&settings)
     }
 
@@ -188,6 +240,24 @@ mod tests {
     async fn defaults_to_comfortable_font_size() {
         let (storage, _config, _vault) = testutil::test_storage().await;
         assert_eq!(storage.get_font_size().await, "comfortable");
+    }
+
+    #[tokio::test]
+    /// 永久删除开关默认关闭：新存储必须落在回收站模式。
+    async fn defaults_to_trash_delete() {
+        let (storage, _config, _vault) = testutil::test_storage().await;
+        assert!(!storage.get_permanent_delete().await);
+    }
+
+    #[tokio::test]
+    /// 永久删除开关写透后重开仍保持，且不影响其他小节。
+    async fn persists_permanent_delete_across_reopen() {
+        let (storage, config, _vault) = testutil::test_storage().await;
+        storage.set_font_size("large").await.unwrap();
+        storage.set_permanent_delete(true).await.unwrap();
+        let reopened = Storage::open(config.path()).unwrap();
+        assert!(reopened.get_permanent_delete().await);
+        assert_eq!(reopened.get_font_size().await, "large");
     }
 
     #[tokio::test]

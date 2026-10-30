@@ -13,7 +13,7 @@ function workspace() {
   const host = defineComponent({
     components: { EditorPane },
     setup() {
-      const notes = ref<NoteSummary[]>(["a", "b"].map((name) => ({ path: name + ".md", title: name, tagsJson: "[]", mtime: 1, cardCount: 0, dueCount: 0 })));
+      const notes = ref<NoteSummary[]>(["a", "b"].map((name) => ({ path: name + ".md", title: name, tagsJson: "[]", aliases: [], mtime: 1, cardCount: 0, dueCount: 0 })));
       const activePath = ref<string | null>("a.md");
       const content = ref("# a\n\n正文 a");
       const documents = new Map([["a.md", content.value], ["b.md", "# b\n\n正文 b"]]);

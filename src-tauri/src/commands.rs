@@ -9,12 +9,12 @@ use crate::{
     models::{
         BootstrapData, ConnectionTestResult, DataFolderTarget, DataLocations, NoteFile,
         NoteSummary, OpenAiLoginMode, OpenAiLoginStart, OpenAiLoginStatus, ProviderInput,
-        ProviderSummary, SaveNoteInput, StudyStats, VaultStatus,
+        ProviderSummary, RenameOutcome, SaveNoteInput, StudyStats, VaultStatus,
     },
     paths,
-    services::{AppServices, SpeechService},
+    services::{link_update, AppServices, SpeechService},
     storage::Storage,
-    vaultfs::VaultState,
+    vaultfs::{remover_for, VaultState},
 };
 
 // ============================================================
@@ -144,53 +144,97 @@ pub async fn create_folder(vault: State<'_, VaultState>, path: String) -> Result
     vault.create_folder(&path)
 }
 
-/// 重命名笔记文件并同步索引与卡片路径。
+/// 重命名笔记文件并同步索引、卡片路径与其他笔记里的双链。
 #[tauri::command]
 pub async fn rename_note_file(
     vault: State<'_, VaultState>,
     storage: State<'_, Storage>,
     old_path: String,
     new_path: String,
-) -> Result<String, CommandError> {
-    let renamed = vault.rename_note(&old_path, &new_path)?;
-    storage.rename_note_paths(&old_path, &renamed).await?;
-    Ok(renamed)
+) -> Result<RenameOutcome, CommandError> {
+    rename_and_rewrite_links(vault.inner(), storage.inner(), &old_path, &new_path, false).await
 }
 
-/// 删除笔记文件及其全部卡片。
+/// 删除笔记文件。
+///
+/// `permanent` 由前端按设置显式传入：false 走系统回收站，并把卡片移入
+/// 隔离区，使用户从回收站还原笔记后卡片与复习历史能一并回来；true 直接
+/// 永久删除笔记与卡片。
 #[tauri::command]
 pub async fn delete_note_file(
     vault: State<'_, VaultState>,
     storage: State<'_, Storage>,
     path: String,
+    permanent: bool,
 ) -> Result<(), CommandError> {
-    vault.delete_note(&path)?;
-    storage.delete_note_paths(&path).await?;
+    // 先删文件再改存储：文件删除失败时卡片状态保持原样，不会出现
+    // "笔记还在但卡片已被拆走"的不一致。
+    vault.delete_note(&path, remover_for(permanent))?;
+    if permanent {
+        storage.delete_note_paths(&path).await?;
+    } else {
+        storage.detach_note_paths(&path).await?;
+    }
     Ok(())
 }
 
-/// 重命名文件夹并同步其下索引与卡片路径。
+/// 重命名文件夹并同步其下索引、卡片路径与其他笔记里的双链。
 #[tauri::command]
 pub async fn rename_folder(
     vault: State<'_, VaultState>,
     storage: State<'_, Storage>,
     old_path: String,
     new_path: String,
-) -> Result<String, CommandError> {
-    let renamed = vault.rename_folder(&old_path, &new_path)?;
-    storage.rename_note_paths(&old_path, &renamed).await?;
-    Ok(renamed)
+) -> Result<RenameOutcome, CommandError> {
+    rename_and_rewrite_links(vault.inner(), storage.inner(), &old_path, &new_path, true).await
 }
 
-/// 删除文件夹及其全部内容与卡片。
+/// 改名 + 联动改写引用链接的共用流程。
+///
+/// 顺序是先规划后改名：改名之后索引里没有旧路径，`[[旧名]]` 指向谁将无从判断。
+/// 改名本身失败直接返回错误；链接改写失败只记入 failed_notes，不回滚文件名。
+async fn rename_and_rewrite_links(
+    vault: &VaultState,
+    storage: &Storage,
+    old_path: &str,
+    new_path: &str,
+    folder: bool,
+) -> Result<RenameOutcome, CommandError> {
+    let pending = if storage.get_update_links_on_rename().await {
+        Some(link_update::plan(storage, old_path).await)
+    } else {
+        None
+    };
+    let renamed = if folder {
+        vault.rename_folder(old_path, new_path)?
+    } else {
+        vault.rename_note(old_path, new_path)?
+    };
+    storage.rename_note_paths(old_path, &renamed).await?;
+    let report = match pending {
+        Some(pending) => link_update::apply(vault, storage, pending, old_path, &renamed).await?,
+        None => link_update::RewriteReport::default(),
+    };
+    Ok(report.into_outcome(renamed))
+}
+
+/// 删除文件夹及其全部内容。
+///
+/// 与单篇删除同构：回收站模式下只把卡片移入隔离区，永久删除模式下连同
+/// 卡片一并清除。
 #[tauri::command]
 pub async fn delete_folder(
     vault: State<'_, VaultState>,
     storage: State<'_, Storage>,
     path: String,
+    permanent: bool,
 ) -> Result<(), CommandError> {
-    vault.delete_folder(&path)?;
-    storage.delete_folder_paths(&path).await?;
+    vault.delete_folder(&path, remover_for(permanent))?;
+    if permanent {
+        storage.delete_folder_paths(&path).await?;
+    } else {
+        storage.detach_folder_paths(&path).await?;
+    }
     Ok(())
 }
 
@@ -213,6 +257,8 @@ pub async fn get_bootstrap_data(
         vault_path: vault.root()?.map(paths::simplified),
         recent_vaults: storage.get_recent_vaults().await?,
         ai_grading_enabled: storage.get_ai_grading_enabled().await?,
+        permanent_delete: storage.get_permanent_delete().await,
+        update_links_on_rename: storage.get_update_links_on_rename().await,
     })
 }
 
@@ -224,6 +270,26 @@ pub async fn set_font_size(
 ) -> Result<String, CommandError> {
     storage.set_font_size(&font_size).await?;
     Ok(font_size)
+}
+
+/// 设置"删除笔记时跳过回收站直接永久删除"。
+#[tauri::command]
+pub async fn set_permanent_delete(
+    storage: State<'_, Storage>,
+    enabled: bool,
+) -> Result<bool, CommandError> {
+    storage.set_permanent_delete(enabled).await?;
+    Ok(enabled)
+}
+
+/// 设置"改名时更新引用链接"。
+#[tauri::command]
+pub async fn set_update_links_on_rename(
+    storage: State<'_, Storage>,
+    enabled: bool,
+) -> Result<bool, CommandError> {
+    storage.set_update_links_on_rename(enabled).await?;
+    Ok(enabled)
 }
 
 /// 设置"使用问答时启用AI评分"。

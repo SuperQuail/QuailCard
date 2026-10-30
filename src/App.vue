@@ -4,15 +4,17 @@ import NoteTabs from "./components/NoteTabs.vue";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AiSplitDialog from "./components/AiSplitDialog.vue";
 import CardEditor from "./components/CardEditor.vue";
-import CardPanel from "./components/CardPanel.vue";
+import NoteSidePanel from "./components/side/NoteSidePanel.vue";
+import NoteSidebar from "./components/side/NoteSidebar.vue";
 import CommandPalette from "./components/CommandPalette.vue";
 import EditorPane from "./components/EditorPane.vue";
-import FileTree from "./components/FileTree.vue";
 import QuickCapture from "./components/QuickCapture.vue";
 import ReviewWorkspace from "./components/ReviewWorkspace.vue";
 import Ribbon from "./components/Ribbon.vue";
 import SettingsOverlay from "./components/SettingsOverlay.vue";
 import StatusBar from "./components/StatusBar.vue";
+import ToastHost from "./components/ToastHost.vue";
+import ConfirmDialog from "./components/ConfirmDialog.vue";
 import VaultSetup from "./components/VaultSetup.vue";
 import AgentWorkspace from "./components/agent/AgentWorkspace.vue";
 import AgentDiff from "./components/agent/AgentDiff.vue";
@@ -22,11 +24,13 @@ import { deriveFolderNames } from "./components/fileTree/treeModel";
 import { useAiSplitFlow } from "./composables/useAiSplitFlow";
 import { useCardEditorFlow } from "./composables/useCardEditorFlow";
 import { useNoteActions } from "./composables/useNoteActions";
+import { useConfirm } from "./composables/useConfirm";
+import { useNoteSidebars } from "./composables/useNoteSidebars";
 import { useNoteTabs } from "./composables/useNoteTabs";
 import { useReviewSessionFlow } from "./composables/useReviewSessionFlow";
 import { useToast } from "./composables/useToast";
 import { countContentWords } from "./markdown/model";
-import { createNoteFile, deleteFolder, deleteNoteFile, clearSelectedNote, initialize, leaveVault, openVault, rescanVault, selectNote } from "./services/appState";
+import { createNoteFile, clearSelectedNote, initialize, leaveVault, openVault, rescanVault, selectNote } from "./services/appState";
 import { activeCardId, activeNoteCards } from "./services/stores/cardStore";
 import { activeNoteContent, activeNotePath, extraFolders, findNote, notes, renameNoteFile, renameFolder, createFolder, updateNoteDraft, notePersistence, noteOperationBusy, lastNotePathChange } from "./services/stores/noteStore";
 import { remapNotePath } from "./domain/notePaths";
@@ -34,7 +38,7 @@ import { resolveError } from "./utils/errorMessage";
 import { activeProviderId, providers, setActiveProvider } from "./services/stores/providerStore";
 import { closeVideoWorkspace, openVideoWorkspace, videoState } from "./services/stores/videoStore";
 import { aiGradingEnabled, setAiGradingEnabled, studyStats } from "./services/stores/reviewStore";
-import { applyFontSize, applyTheme, fontSize, initialized, setFontSize, theme, toggleTheme } from "./services/stores/uiStore";
+import { applyFontSize, applyTheme, fontSize, initialized, permanentDelete, setFontSize, setPermanentDelete, setUpdateLinksOnRename, theme, toggleTheme, updateLinksOnRename } from "./services/stores/uiStore";
 import { attachmentFolderSaving, attachmentFolderStatus, dataLocations, recentVaults, setAttachmentFolder, setVaultPassword, vaultConfig, vaultPath, vaultStatus } from "./services/stores/vaultStore";
 import { revealDataFolder } from "./api/backend";
 
@@ -96,8 +100,11 @@ async function openVideo(): Promise<void> {
 watch(() => reviewSession.value.open, (open) => { if (open) { agentState.open = false; videoState.open = false; } }, { flush: "sync" });
 watch(() => agentState.open, (open) => { if (open) { reviewSession.value.open = false; videoState.open = false; } }, { flush: "sync" });
 watch(() => videoState.open, (open) => { if (open) { agentState.open = false; reviewSession.value.open = false; } }, { flush: "sync" });
+/** 确认框状态：壳层只做 Promise 接线，业务策略仍在各用例层。 */
+const { request: confirmRequest, ask: askConfirm, settle: settleConfirm } = useConfirm();
 const { handleSelectNote, handleQuickCapture, handleDeleteSelection, handleMoveEntries } = useNoteActions({
   showToast,
+  confirm: askConfirm,
   // 窄窗口下选择笔记后收起抽屉。
   onNoteOpened: () => {
     agentState.open = false;
@@ -108,6 +115,16 @@ const { handleSelectNote, handleQuickCapture, handleDeleteSelection, handleMoveE
     }
   },
 });
+
+/** 侧栏与双链跳转：左栏页签、大纲定位、反链与 [[链接]] 打开。 */
+const { backlinks, jumpToHeading, openBacklink, openLink } = useNoteSidebars({
+  editor: editorPane,
+  openNote: handleSelectNote,
+  createNote: (title, folder) => handleQuickCapture(title, folder, ""),
+  askConfirm,
+});
+/** 编辑器视口顶部的字符偏移：右侧大纲据此高亮当前小节。 */
+const viewportOffset = ref(0);
 
 /** 标签只跟踪实际打开的笔记，保存失败时保留页面而不是丢弃草稿。 */
 const { tabs: noteTabs, close: closeNoteTab, closing: tabClosing } = useNoteTabs({
@@ -271,19 +288,19 @@ watch(() => theme.value, applyTheme);
         :class="treeOpen ? 'w-[252px]' : 'w-0 border-r-0'"
       >
         <div class="h-full w-[252px]">
-          <FileTree
+          <NoteSidebar
             :notes="notes"
             :folder-names="folderList"
             :active-note-path="activeNotePath"
             :due-count="studyStats.dueCount"
+            :path-change="lastNotePathChange"
             @select-note="(path) => void handleSelectNote(path)"
             @note-created="(folder, title) => void createNoteFile(folder, title, '')"
             @folder-created="(path) => void createFolder(path)"
-            :path-change="lastNotePathChange"
             @rename-note="(oldPath, newPath, done) => void handleRename(oldPath, newPath, done, renameNoteFile)"
-            @delete-note="(path) => void deleteNoteFile(path)"
+            @delete-note="(path) => void handleDeleteSelection([{ kind: 'note', path }])"
             @rename-folder="(oldPath, newPath, done) => void handleRename(oldPath, newPath, done, renameFolder)"
-            @delete-folder="(path) => void deleteFolder(path)"
+            @delete-folder="(path) => void handleDeleteSelection([{ kind: 'folder', path }])"
             @delete-selection="(items) => void handleDeleteSelection(items)"
             @move-entries="(moves) => void handleMoveEntries(moves)"
             @open-review="startTodayReview"
@@ -331,6 +348,10 @@ watch(() => theme.value, applyTheme);
           @card-click="activeCardId = $event"
           @create-card="openCardEditorFromSelection"
           @save-content="updateNoteDraft"
+          :link-targets="notes"
+          @viewport-change="viewportOffset = $event"
+          @open-link="(target) => void openLink(target)"
+          @toast="showToast"
         />
         <template v-else>
           <NoteTabs v-if="noteTabs.length" :tabs="noteTabs" :active-path="activeNotePath ?? ''" :busy="tabClosing || noteOperationBusy" @select="(path) => void handleSelectNote(path)" @close="(path) => void closeNoteTab(path)">
@@ -349,18 +370,21 @@ watch(() => theme.value, applyTheme);
         :class="panelOpen ? 'w-[300px]' : 'w-0 border-l-0'"
       >
         <div class="h-full w-[300px]">
-          <CardPanel
+          <NoteSidePanel
             v-if="activeNote"
-            :note-path="activeNote.path"
             :cards="activeNoteCards"
             :content="activeNoteContent"
             :active-card-id="activeCardId"
+            :viewport-offset="viewportOffset"
+            :backlinks="backlinks"
             @edit-card="editCard"
             @delete-card="(id) => void handleDeleteCard(id)"
             @add-card="openCardEditor(activeNoteCards[0]?.kind ?? 'qa')"
             @open-ai-split="openAiSplit"
             @start-review="startReviewFromNote"
             @collapse="panelOpen = false"
+            @jump="jumpToHeading"
+            @open-backlink="(path, line) => void openBacklink(path, line)"
           />
         </div>
       </aside>
@@ -406,6 +430,8 @@ watch(() => theme.value, applyTheme);
       :active-provider-id="activeProviderId"
       :vault-status="vaultStatus"
       :ai-grading-enabled="aiGradingEnabled"
+      :permanent-delete="permanentDelete"
+      :update-links-on-rename="updateLinksOnRename"
       :attachment-folder="vaultConfig.attachmentFolder"
       :attachment-folder-saving="attachmentFolderSaving"
       :attachment-folder-status="attachmentFolderStatus"
@@ -418,9 +444,14 @@ watch(() => theme.value, applyTheme);
       @set-active-provider="(id) => void setActiveProvider(id)"
       @set-vault-password="(password) => void setVaultPassword(password)"
       @update-ai-grading="(enabled) => void setAiGradingEnabled(enabled)"
+      @update-permanent-delete="(enabled) => void setPermanentDelete(enabled)"
+      @update-links-on-rename="(enabled) => void setUpdateLinksOnRename(enabled)"
       @save-attachment-folder="(folder) => void setAttachmentFolder(folder)"
       @reveal-data-folder="(target) => void handleRevealDataFolder(target)"
     />
+
+    <ConfirmDialog v-if="confirmRequest" open :danger="confirmRequest.danger !== false" :title="confirmRequest.title" :body="confirmRequest.body"
+      :confirm-label="confirmRequest.confirmLabel" @confirm="settleConfirm(true)" @cancel="settleConfirm(false)" />
 
     <AiSplitDialog
       v-if="aiSplit.open"
@@ -453,26 +484,6 @@ watch(() => theme.value, applyTheme);
       @save="(draft) => void handleCardEditorSave(draft)"
     />
 
-    <Transition name="toast">
-      <div
-        v-if="toastMessage"
-        class="fixed bottom-9 left-1/2 z-90 -translate-x-1/2 rounded-lg bg-ink px-3.5 py-2 text-[12px] font-medium text-bg shadow-lg"
-      >
-        {{ toastMessage }}
-      </div>
-    </Transition>
+    <ToastHost :message="toastMessage" />
   </div>
 </template>
-
-<style scoped>
-.toast-enter-active,
-.toast-leave-active {
-  transition: opacity 150ms, transform 150ms;
-}
-
-.toast-enter-from,
-.toast-leave-to {
-  opacity: 0;
-  transform: translate(-50%, 6px);
-}
-</style>

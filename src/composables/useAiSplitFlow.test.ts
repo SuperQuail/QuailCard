@@ -34,7 +34,7 @@ beforeEach(() => {
   vaultPath.value = "Vault-A";
   activeNotePath.value = "原笔记.md";
   activeNoteContent.value = original;
-  notes.value = ["原笔记.md", "另一篇.md"].map((path) => ({ path, title: path, tagsJson: "[]", cardCount: 0, dueCount: 0, mtime: 1 }));
+  notes.value = ["原笔记.md", "另一篇.md"].map((path) => ({ path, title: path, tagsJson: "[]", aliases: [], cardCount: 0, dueCount: 0, mtime: 1 }));
   activeNoteCards.value = [];
   notePersistence.register("原笔记.md", original);
   providers.value = [{ id: "active", name: "AI", model: "model", models: [{ id: "model", name: "model", contextWindow: null, maxOutputTokens: null }], shortCode: "AI", protocol: "openai", baseUrl: "https://example.test", hasApiKey: true, hasCredential: false, authType: null, oauthAccountId: null, providerType: "api", supportsVision: true, status: "connected" }];

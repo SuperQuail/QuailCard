@@ -56,6 +56,7 @@ function testNote(path: string): NoteSummary {
     path,
     title: path.split("/").pop()?.replace(/\.md$/, "") ?? path,
     tagsJson: "[]",
+    aliases: [],
     cardCount: 0,
     dueCount: 0,
     mtime: 1,

@@ -29,6 +29,8 @@ export async function initialize(): Promise<void> {
     reviewStore.studyStats.value = data.studyStats;
     reviewStore.aiGradingEnabled.value = data.aiGradingEnabled;
     uiStore.fontSize.value = data.fontSize;
+    uiStore.permanentDelete.value = data.permanentDelete;
+    uiStore.updateLinksOnRename.value = data.updateLinksOnRename;
     vaultStore.vaultStatus.value = status;
     await vaultStore.loadVaultConfig();
     await vaultStore.loadDataLocations();
@@ -111,9 +113,9 @@ export async function createNoteFile(folder: string, title: string, body: string
   }
 }
 
-/** 删除笔记：当前笔记被删时回退并同步卡片区。 */
-export async function deleteNoteFile(path: string): Promise<void> {
-  await noteStore.deleteNoteFile(path);
+/** 删除笔记：当前笔记被删时回退并同步卡片区；`permanent` 由用例层按设置显式传入。 */
+export async function deleteNoteFile(path: string, permanent: boolean): Promise<void> {
+  await noteStore.deleteNoteFile(path, permanent);
   if (noteStore.activeNotePath.value) {
     await cardStore.loadActiveCards(noteStore.activeNotePath.value);
   } else {
@@ -121,9 +123,9 @@ export async function deleteNoteFile(path: string): Promise<void> {
   }
 }
 
-/** 删除文件夹：当前笔记受影响时清空卡片区。 */
-export async function deleteFolder(path: string): Promise<void> {
-  await noteStore.deleteFolder(path);
+/** 删除文件夹：当前笔记受影响时清空卡片区；`permanent` 与单篇删除同语义。 */
+export async function deleteFolder(path: string, permanent: boolean): Promise<void> {
+  await noteStore.deleteFolder(path, permanent);
   if (!noteStore.activeNotePath.value) {
     cardStore.clearActiveCards();
   }

@@ -12,9 +12,30 @@ export interface NoteSummary {
   path: string;
   title: string;
   tagsJson: string;
+  /** frontmatter 里声明的别名；双链解析与补全把它和标题同等对待。 */
+  aliases: string[];
   cardCount: number;
   dueCount: number;
   mtime: number;
+}
+
+/** 改名结果：新路径与联动改写过链接的笔记，供前端刷新已打开的标签。 */
+export interface RenameOutcome {
+  path: string;
+  /** 正文里指向它的链接已被改写的笔记路径。 */
+  updatedNotes: string[];
+  /** 改写失败的笔记路径；文件改名不回滚，这些笔记里的旧链接会失效。 */
+  failedNotes: string[];
+}
+
+/** 反链条目：一篇笔记正文里指向当前笔记的一处引用。 */
+export interface Backlink {
+  sourcePath: string;
+  sourceTitle: string;
+  /** 链接所在行号，从 1 开始。 */
+  line: number;
+  /** 该行去首尾空白后的预览文本。 */
+  snippet: string;
 }
 
 /** 读取到的笔记文件内容。 */
@@ -193,6 +214,10 @@ export interface BootstrapData {
   vaultPath: string | null;
   recentVaults: string[];
   aiGradingEnabled: boolean;
+  /** 删除笔记时是否跳过回收站直接永久删除。 */
+  permanentDelete: boolean;
+  /** 改名/移动笔记时是否自动改写其他笔记里的双链。 */
+  updateLinksOnRename: boolean;
 }
 
 /** 当前 Vault 的文件级配置。 */

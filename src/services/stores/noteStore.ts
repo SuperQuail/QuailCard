@@ -101,10 +101,10 @@ export async function renameNoteFile(oldPath: string, newPath: string): Promise<
   await renameEntry(oldPath, newPath, backend.renameNoteFile);
 }
 
-/** 删除笔记：若删的是当前笔记则回退到列表中另一篇。 */
-export async function deleteNoteFile(path: string): Promise<void> {
+/** 删除笔记：若删的是当前笔记则回退到列表中另一篇；`permanent` 决定是否绕过回收站。 */
+export async function deleteNoteFile(path: string, permanent: boolean): Promise<void> {
   await notePersistence.flush(path);
-  await backend.deleteNoteFile(path);
+  await backend.deleteNoteFile(path, permanent);
   notePersistence.remove(path);
   if (activeNotePath.value === path) {
     const fallback = notes.value.find((note) => note.path !== path);
@@ -126,7 +126,10 @@ async function renameEntry(oldPath: string, newPath: string, rename: typeof back
   noteOperationBusy.value = true;
   try {
     await notePersistence.flushAll();
-    const renamed = await rename(oldPath, newPath);
+    const outcome = await rename(oldPath, newPath);
+    const renamed = outcome.path;
+    // 改名会重映射路径，先按旧路径判断"当前打开的笔记是否被联动改写了正文"。
+    const rewrittenActive = activeNotePath.value !== null && outcome.updatedNotes.includes(activeNotePath.value);
     ++listRevision;
     ++selectionRevision;
     const remap = (path: string): string => remapNotePath(path, oldPath, renamed);
@@ -138,16 +141,25 @@ async function renameEntry(oldPath: string, newPath: string, rename: typeof back
     extraFolders.value = extraFolders.value.map(remap);
     if (activeNotePath.value) activeNotePath.value = remap(activeNotePath.value);
     lastNotePathChange.value = { oldPath, newPath: renamed };
+    // 后端已经改写了引用方笔记的正文；当前打开的那篇若在名单里，必须按磁盘内容重载，
+    // 否则编辑区还停在旧链接上，下一次自动保存会把改好的链接又覆盖回去。
+    if (rewrittenActive) {
+      try { await reloadActiveContent(true); } catch (error) { errorMessage.value = backend.resolveErrorMessage(error); }
+    }
     try { await refreshNotes(); } catch (error) { errorMessage.value = backend.resolveErrorMessage(error); }
+    // 改写失败的笔记只在冲突时出现：明确告知，避免用户以为链接已经跟着走了。
+    if (outcome.failedNotes.length > 0) {
+      errorMessage.value = `${outcome.failedNotes.length} 篇笔记的引用未能更新：${outcome.failedNotes.join("、")}`;
+    }
   } finally {
     noteOperationBusy.value = false;
   }
 }
 
-/** 删除文件夹及其笔记：当前笔记受影响时清空编辑区。 */
-export async function deleteFolder(path: string): Promise<void> {
+/** 删除文件夹及其笔记：当前笔记受影响时清空编辑区；`permanent` 与单篇删除同语义。 */
+export async function deleteFolder(path: string, permanent: boolean): Promise<void> {
   await notePersistence.flushAll();
-  await backend.deleteFolder(path);
+  await backend.deleteFolder(path, permanent);
   notePersistence.remove(path);
   extraFolders.value = extraFolders.value.filter((folder) => folder !== path && !folder.startsWith(`${path}/`));
   if (activeNotePath.value === path || activeNotePath.value?.startsWith(`${path}/`)) {
