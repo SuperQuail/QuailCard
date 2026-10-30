@@ -1,0 +1,136 @@
+{
+  "_comment": "双链解析契约夹具：后端 storage/links.rs 与前端 domain/links.ts 必须同时通过。修改解析规则必须先改这里。",
+  "notes": [
+    {
+      "path": "A.md",
+      "title": "A",
+      "aliases": []
+    },
+    {
+      "path": "dir/B.md",
+      "title": "B",
+      "aliases": []
+    },
+    {
+      "path": "dir/sub/B.md",
+      "title": "B",
+      "aliases": [
+        "Bee"
+      ]
+    },
+    {
+      "path": "dir/sub/C.md",
+      "title": "C",
+      "aliases": [
+        "Sea"
+      ]
+    },
+    {
+      "path": "notes/Deep.md",
+      "title": "Deep",
+      "aliases": []
+    },
+    {
+      "path": "x/Twin.md",
+      "title": "Twin",
+      "aliases": []
+    },
+    {
+      "path": "y/Twin.md",
+      "title": "Twin",
+      "aliases": []
+    }
+  ],
+  "cases": [
+    {
+      "name": "Vault 相对路径精确命中",
+      "from": "A.md",
+      "target": "dir/B.md",
+      "expect": "dir/B.md"
+    },
+    {
+      "name": "省略 .md 后缀同样命中",
+      "from": "A.md",
+      "target": "dir/B",
+      "expect": "dir/B.md"
+    },
+    {
+      "name": "路径大小写不敏感",
+      "from": "A.md",
+      "target": "DIR/B.MD",
+      "expect": "dir/B.md"
+    },
+    {
+      "name": "反斜杠写法的路径也接受",
+      "from": "A.md",
+      "target": "dir\\sub\\C",
+      "expect": "dir/sub/C.md"
+    },
+    {
+      "name": "标题唯一时直接命中",
+      "from": "dir/B.md",
+      "target": "Deep",
+      "expect": "notes/Deep.md"
+    },
+    {
+      "name": "同名标题优先同目录",
+      "from": "dir/sub/C.md",
+      "target": "B",
+      "expect": "dir/sub/B.md"
+    },
+    {
+      "name": "同名标题且都不同目录时取路径最短",
+      "from": "A.md",
+      "target": "B",
+      "expect": "dir/B.md"
+    },
+    {
+      "name": "同长度同标题时按路径字典序",
+      "from": "A.md",
+      "target": "Twin",
+      "expect": "x/Twin.md"
+    },
+    {
+      "name": "别名可解析",
+      "from": "A.md",
+      "target": "Bee",
+      "expect": "dir/sub/B.md"
+    },
+    {
+      "name": "别名大小写不敏感",
+      "from": "A.md",
+      "target": "sea",
+      "expect": "dir/sub/C.md"
+    },
+    {
+      "name": "路径优先于标题匹配",
+      "from": "A.md",
+      "target": "dir/sub/B",
+      "expect": "dir/sub/B.md"
+    },
+    {
+      "name": "目标前后空白被忽略",
+      "from": "A.md",
+      "target": "  Deep  ",
+      "expect": "notes/Deep.md"
+    },
+    {
+      "name": "未收录的目标解析为空",
+      "from": "A.md",
+      "target": "不存在的笔记",
+      "expect": null
+    },
+    {
+      "name": "空目标解析为空",
+      "from": "A.md",
+      "target": "",
+      "expect": null
+    },
+    {
+      "name": "指向自身也可以是有效链接",
+      "from": "A.md",
+      "target": "A",
+      "expect": "A.md"
+    }
+  ]
+}
