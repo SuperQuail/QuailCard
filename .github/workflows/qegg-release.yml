@@ -195,6 +195,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install qegg
         run: go install github.com/SuperQuail/QuailEgg/cmd/qegg@latest
+      - uses: actions/cache@v4
+        with:
+          path: |
+            src-tauri/resources/ffmpeg
+            src-tauri/resources/whisper
+          key: quailcard-resources-${{ runner.os }}-${{ hashFiles('scripts/fetch-ffmpeg.*', 'scripts/fetch-whisper.*', 'scripts/component-*') }}
+      - uses: actions/cache@v4
+        with:
+          path: src-tauri/resources/ecdict.db
+          key: quailcard-ecdict-${{ runner.os }}-${{ hashFiles('scripts/fetch-ecdict.*') }}
       - name: 固定发布日志语言
         run: echo "QEGG_LANG=zh" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4
@@ -239,6 +249,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install qegg
         run: go install github.com/SuperQuail/QuailEgg/cmd/qegg@latest
+      - uses: actions/cache@v4
+        with:
+          path: |
+            src-tauri/resources/ffmpeg
+            src-tauri/resources/whisper
+          key: quailcard-resources-${{ runner.os }}-${{ hashFiles('scripts/fetch-ffmpeg.*', 'scripts/fetch-whisper.*', 'scripts/component-*') }}
+      - uses: actions/cache@v4
+        with:
+          path: src-tauri/resources/ecdict.db
+          key: quailcard-ecdict-${{ runner.os }}-${{ hashFiles('scripts/fetch-ecdict.*') }}
       - name: 固定发布日志语言
         run: echo "QEGG_LANG=zh" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4

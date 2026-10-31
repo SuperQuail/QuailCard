@@ -50,14 +50,9 @@ jobs:
             src-tauri/resources/whisper
           key: quailcard-components-${{ runner.os }}-${{ env.TARGET_ARCH }}-ffmpeg-unix7.1.1-aom3.12.1-win20260911-lgpl-av1-v4-whisper-1.7.6-${{ env.COMPONENT_FLAVOR }}-${{ hashFiles('scripts/fetch-ffmpeg.*', 'scripts/fetch-whisper.*', 'scripts/component-*') }}
 
-      - name: 准备随包组件（ffmpeg / whisper-cli）
-        run: |
-          bash ./scripts/fetch-ffmpeg.sh
-          bash ./scripts/fetch-whisper.sh
-
-      - name: 拉取内置 ECDICT 词典
-        # Tauri 构建脚本会校验 resources/ecdict.db，clippy 与测试前必须准备该文件。
-        run: bash ./scripts/fetch-ecdict.sh
+      - name: 准备随包组件与词典
+        # Tauri 构建脚本会校验 resources/ecdict.db；任一组件的准备失败都在此中断。
+        run: bash ./scripts/fetch-components.sh
 
       - name: 安装前端依赖
         run: pnpm install --frozen-lockfile
