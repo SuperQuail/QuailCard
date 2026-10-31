@@ -205,8 +205,6 @@ jobs:
         with:
           path: src-tauri/resources/ecdict.db
           key: quailcard-ecdict-${{ runner.os }}-${{ hashFiles('scripts/fetch-ecdict.*') }}
-      - name: 固定发布日志语言
-        run: echo "QEGG_LANG=zh" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4
         with: { version: 9 }
       - uses: actions/setup-node@v6
@@ -259,8 +257,6 @@ jobs:
         with:
           path: src-tauri/resources/ecdict.db
           key: quailcard-ecdict-${{ runner.os }}-${{ hashFiles('scripts/fetch-ecdict.*') }}
-      - name: 固定发布日志语言
-        run: echo "QEGG_LANG=zh" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4
         with: { version: 9 }
       - uses: actions/setup-node@v6
