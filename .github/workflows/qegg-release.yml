@@ -21,8 +21,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-windows:
+  plan:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
     if: github.actor != 'github-actions[bot]'
+    outputs:
+      phase: ${{ steps.plan.outputs.phase }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.26', cache: true }
+      - name: Install qegg
+        run: go install github.com/SuperQuail/QuailEgg/cmd/qegg@latest
+      - name: Plan
+        id: plan
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          qegg plan --json > "$RUNNER_TEMP/plan.json"
+          phase="$(jq -r .phase "$RUNNER_TEMP/plan.json")"
+          case "$phase" in
+            none|version|publish) ;;
+            *) echo "unexpected phase: $phase" >&2; exit 1 ;;
+          esac
+          echo "phase=$phase" >> "$GITHUB_OUTPUT"
+  build-windows:
+    needs: plan
+    if: needs.plan.outputs.phase == 'publish'
     runs-on: windows-2022
     timeout-minutes: 90
     steps:
@@ -68,7 +96,8 @@ jobs:
           path: |
             dist/*
   build-macos-arm64:
-    if: github.actor != 'github-actions[bot]'
+    needs: plan
+    if: needs.plan.outputs.phase == 'publish'
     runs-on: macos-latest
     timeout-minutes: 90
     steps:
@@ -108,7 +137,8 @@ jobs:
           path: |
             dist/*
   build-macos-x86_64:
-    if: github.actor != 'github-actions[bot]'
+    needs: plan
+    if: needs.plan.outputs.phase == 'publish'
     runs-on: macos-latest
     timeout-minutes: 90
     steps:
@@ -147,14 +177,12 @@ jobs:
           if-no-files-found: error
           path: |
             dist/*
-  release:
+  version:
     needs:
-      - build-windows
-      - build-macos-arm64
-      - build-macos-x86_64
+      - plan
     runs-on: ubuntu-22.04
     timeout-minutes: 90
-    if: github.actor != 'github-actions[bot]'
+    if: needs.plan.outputs.phase == 'version'
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -166,7 +194,51 @@ jobs:
         with: { go-version: '1.26', cache: true }
       - uses: dtolnay/rust-toolchain@stable
       - name: Install qegg
-        run: go install github.com/SuperQuail/QuailEgg/cmd/qegg@v0.9.0
+        run: go install github.com/SuperQuail/QuailEgg/cmd/qegg@latest
+      - name: 固定发布日志语言
+        run: echo "QEGG_LANG=zh" >> "$GITHUB_ENV"
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - name: 安装 Tauri Linux 系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils build-essential cmake git pkg-config perl
+      - name: 准备随包资源（词典 / ffmpeg / whisper）
+        run: |
+          bash ./scripts/fetch-ecdict.sh
+          bash ./scripts/fetch-ffmpeg.sh
+          bash ./scripts/fetch-whisper.sh
+      - run: pnpm install --frozen-lockfile
+      - name: Release
+        run: qegg release --yes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+  publish:
+    needs:
+      - plan
+      - build-windows
+      - build-macos-arm64
+      - build-macos-x86_64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    if: needs.plan.outputs.phase == 'publish'
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.26', cache: true }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install qegg
+        run: go install github.com/SuperQuail/QuailEgg/cmd/qegg@latest
       - name: 固定发布日志语言
         run: echo "QEGG_LANG=zh" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4

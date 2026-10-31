@@ -1,4 +1,5 @@
 # 固定 BtbN 官方 LGPL3 完整编解码构建；验证归档与程序摘要，不从滚动 latest 下载。
+# BtbN 会清理旧 autobuild，因此归档镜像到本仓库 release，CI 只从镜像下载。
 param(
     [string]$TargetArch = $env:TARGET_ARCH,
     [string]$Url,
@@ -8,20 +9,23 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 if (-not $TargetArch) { $TargetArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() }
 if ($TargetArch -notin @("x64", "amd64", "x86_64")) { throw "FFmpeg Windows bundle supports x86_64 only, not $TargetArch" }
-$tag = "autobuild-2026-09-11-13-20"
-$asset = "ffmpeg-N-126497-g5b614efc7e-win64-lgpl.zip"
-$archiveSha = "17e902eed2544bd8d75982c69e091cbc9628c19a0fb8c86ca28926dd8f5215e4"
-$binarySha = "d23eb7e3a456d321d6900d2a966d77bba536e06b40b1ac811da06cd16cbd3adc"
-$ffmpegRevision = "5b614efc7e6134274fa5d05e240736be2dc203cc"
-$recipesRevision = "cc8f0958be119db774cdaf6c50065651a4901e72"
-$upstreamUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/$tag/$asset"
+# 升级时发布新 tag 的归档并同步下面的 release tag / asset / SHA 与源码 revision；
+# 摘要值不得放宽，否则无法证明下载物与已验证构建一致。
+$releaseTag = "ffmpeg-n128212"
+$upstreamTag = "autobuild-2026-10-30-13-01"
+$asset = "ffmpeg-N-128212-g17a4a474f4-win64-lgpl.zip"
+$archiveSha = "dddf11283d1b4e2250fbfc6bd3825e139713478aa80a5cb569689f502ad7d5ad"
+$binarySha = "443f2880fda1b04c15d310f71fd649e448e2ec9f099e3ffd29eddc07680962bb"
+$ffmpegRevision = "17a4a474f4013bfef4393abaca282078e24efc35"
+$recipesRevision = "5031c6f1082414e53688d39e521849905071070d"
+$upstreamUrl = "https://github.com/SuperQuail/QuailCard/releases/download/$releaseTag/$asset"
 if (-not $Url) { $Url = $upstreamUrl }
 $downloadUri = [uri]$Url
 if (-not $downloadUri.IsAbsoluteUri -or $downloadUri.Scheme -ne "https") { throw "FFmpeg mirror URL must use HTTPS" }
 $root = Split-Path -Parent $PSScriptRoot
 $output = Join-Path $root "src-tauri/resources/ffmpeg"
 $target = Join-Path $output "ffmpeg.exe"
-$identity = "Windows-x86_64-$tag-lgpl3-full-av1-v4-$archiveSha"
+$identity = "Windows-x86_64-$releaseTag-lgpl3-full-av1-v4-$archiveSha"
 $complete = Test-Path (Join-Path $output "build-id.txt")
 foreach ($required in @("ffmpeg.exe", "LICENSE.txt", "COPYING.GPLv3", "SOURCE-INFO.txt", "BUILD-INFO.txt", "ffmpeg-source.tar.gz", "btbn-build-recipes.tar.gz")) {
     $complete = $complete -and (Test-Path (Join-Path $output $required))
@@ -41,11 +45,15 @@ function Invoke-Checked([string]$Program, [string[]]$Arguments) {
 try {
     if (-not $ArchivePath) {
         $ArchivePath = Join-Path $work "package.zip"
-        Invoke-Checked "curl.exe" @("--proto", "=https", "--tlsv1.2", "-fL", "--retry", "3", "--connect-timeout", "30", "-o", $ArchivePath, $url)
+        try {
+            Invoke-Checked "curl.exe" @("--proto", "=https", "--tlsv1.2", "-fL", "--retry", "3", "--connect-timeout", "30", "-o", $ArchivePath, $url)
+        } catch {
+            throw "FFmpeg 归档下载失败：$url。BtbN 会清理较早的 autobuild（curl exit 22 通常就是 404），请更新脚本中的 tag/asset/SHA，或用 -Url 指向镜像、-ArchivePath 指向本地已验证归档。原始错误：$_"
+        }
     }
     if ((Get-FileHash $ArchivePath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $archiveSha) { throw "FFmpeg archive SHA256 mismatch" }
     Expand-Archive -LiteralPath $ArchivePath -DestinationPath (Join-Path $work "package")
-    $package = Join-Path $work "package/ffmpeg-N-126497-g5b614efc7e-win64-lgpl"
+    $package = Join-Path $work "package/ffmpeg-N-128212-g17a4a474f4-win64-lgpl"
     $binary = Join-Path $package "bin/ffmpeg.exe"
     if ((Get-FileHash $binary -Algorithm SHA256).Hash.ToLowerInvariant() -ne $binarySha) { throw "FFmpeg executable SHA256 mismatch" }
     $configuration = (& $binary -version 2>&1 | Out-String)
@@ -78,11 +86,11 @@ try {
     }
     Copy-Item (Join-Path $work "ffmpeg-source/COPYING.GPLv3") $stage
     @"
-FFmpeg N-126497-g5b614efc7e-20260911; Windows x86_64; LGPL-3.0-or-later (NOT GPL, NOT LGPL2.1).
-Canonical binary distribution: $upstreamUrl
+FFmpeg N-128212-g17a4a474f4-20261030; Windows x86_64; LGPL-3.0-or-later (NOT GPL, NOT LGPL2.1).
+Canonical binary distribution (project mirror): $upstreamUrl
+Upstream build: BtbN/FFmpeg-Builds $upstreamTag (its dated assets are pruned, hence the mirror).
 Mirror/archive overrides never change the required SHA256.
-Retention: upstream dated daily assets may be pruned. Retain this verified ZIP in your artifact
-store; CI can pass -Url https://your-mirror/... or -ArchivePath to the exact same archive.
+CI may pass -Url https://your-mirror/... or -ArchivePath to the exact same archive.
 Mirror URLs (which may contain credentials) are intentionally not persisted in this manifest.
 Archive SHA256: $archiveSha
 Executable SHA256: $binarySha
@@ -104,6 +112,8 @@ $configuration
         Copy-Item $binary $target -Force
     }
     Get-ChildItem $stage | Copy-Item -Destination $output -Recurse -Force
+    # 安装后仍缺可执行文件说明拷贝无声失败；这里直接失败，避免下游 tauri build 报难懂的缺资源错误。
+    if (-not (Test-Path $target)) { throw "FFmpeg 安装后仍缺少 $target" }
     $identity | Set-Content (Join-Path $output "build-id.txt") -Encoding utf8
     Write-Host "FFmpeg full-codec bundle ready: $identity"
 } finally {

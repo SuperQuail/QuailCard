@@ -1,8 +1,8 @@
-# 变更记录
+# Change records
 
-每个用户可见的改动都需要在本目录新增一个 Markdown 文件。
+Every user-visible change needs one Markdown file in this directory.
 
-记录示例：
+Example record:
 
     ---
     type: feat
@@ -11,13 +11,13 @@
       my-package: minor
     ---
 
-    用一两句话描述这次改动。
+    Describe the change in one or two sentences.
 
-字段说明：
+Fields:
 
-- type: feat、fix、perf、docs、refactor、test、build、ci、chore、style 或 revert
-- scope: 可选，影响范围
-- packages: 包名与升级级别（patch、minor、major）
-- release: 可选，默认 true；为 false 时只写入 Changelog
+- type: feat, fix, perf, docs, refactor, test, build, ci, chore, style or revert
+- scope: optional area name
+- packages: package name to bump level (patch, minor, major)
+- release: optional, defaults to true; false records only appear in the changelog
 
-用 qegg commit 生成记录。
+Create records with qegg commit.
