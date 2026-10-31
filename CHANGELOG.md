@@ -3,7 +3,7 @@
 <!-- qegg:release 0.5.0 -->
 ## v0.5.0 - 2026-10-31
 
-### 新功能
+### Features
 
 - [`833baef`](https://github.com/SuperQuail/QuailCard/commit/833baef63be8faa9ad0027a369d3b5d83188c569): 右侧栏新增标签与大纲，frontmatter 只读展示。
 - [`c261927`](https://github.com/SuperQuail/QuailCard/commit/c261927d94bf59a113443b20f5c35b09c4032608): 图片支持右键复制、另存为与定位到文件夹。
