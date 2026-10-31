@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "version": "0.5.0",
+  "created_at": "2026-10-31T03:04:32.049079913Z",
+  "mode": "pr",
+  "fingerprint": "sha256:afbbe4f695dedfd1b121e0bac595fbe0302ef984475bca1d0cb8eab377c8d6d7",
+  "repo": {
+    "host": "github.com",
+    "owner": "SuperQuail",
+    "name": "QuailCard",
+    "url": "https://github.com/SuperQuail/QuailCard"
+  },
+  "verified": {
+    "commands": [
+      "pnpm typecheck",
+      "pnpm test",
+      "cargo test --manifest-path src-tauri/Cargo.toml"
+    ],
+    "skipped": false,
+    "at": "2026-10-31T03:04:32.049080464Z"
+  },
+  "packages": [
+    {
+      "name": "quailcard",
+      "path": "src-tauri",
+      "resolver": "rust",
+      "current": "0.4.0",
+      "next": "0.5.0",
+      "bump": "minor",
+      "tag": "app-v0.5.0",
+      "publish": false
+    }
+  ],
+  "releases": [
+    {
+      "version": "0.5.0",
+      "tag": "app-v0.5.0",
+      "previous_tag": "app-v0.4.0",
+      "packages": [
+        "quailcard"
+      ]
+    }
+  ],
+  "changes": [
+    {
+      "file": ".changes/frontmatter-tags.md",
+      "type": "feat",
+      "scope": "notes",
+      "bump": "minor",
+      "packages": [
+        "quailcard"
+      ],
+      "body": "右侧栏新增标签与大纲，frontmatter 只读展示。",
+      "commit": "833baef63be8faa9ad0027a369d3b5d83188c569",
+      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/833baef63be8faa9ad0027a369d3b5d83188c569",
+      "author": "Wsrsq"
+    },
+    {
+      "file": ".changes/image-actions.md",
+      "type": "feat",
+      "scope": "attachments",
+      "bump": "minor",
+      "packages": [
+        "quailcard"
+      ],
+      "body": "图片支持右键复制、另存为与定位到文件夹。",
+      "commit": "c261927d94bf59a113443b20f5c35b09c4032608",
+      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/c261927d94bf59a113443b20f5c35b09c4032608",
+      "author": "Wsrsq"
+    },
+    {
+      "file": ".changes/note-links.md",
+      "type": "feat",
+      "scope": "links",
+      "bump": "minor",
+      "packages": [
+        "quailcard"
+      ],
+      "body": "支持 [[双链]] 与反链面板，改名时自动同步引用。",
+      "commit": "6089536d9057a9767900837041220b801201db2e",
+      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/6089536d9057a9767900837041220b801201db2e",
+      "author": "Wsrsq"
+    },
+    {
+      "file": ".changes/trash-delete.md",
+      "type": "feat",
+      "scope": "vault",
+      "bump": "minor",
+      "packages": [
+        "quailcard"
+      ],
+      "body": "删除走系统回收站，还原后卡片与复习记录自动接回。",
+      "commit": "d7b332bb051d102bb26fccdfd365cca53b3a67d6",
+      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/d7b332bb051d102bb26fccdfd365cca53b3a67d6",
+      "author": "Wsrsq"
+    }
+  ]
+}
