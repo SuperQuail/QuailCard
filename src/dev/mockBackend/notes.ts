@@ -1,5 +1,7 @@
-import type { Backlink, NoteCard, NoteFile, NoteSummary, RenameOutcome, SearchResult } from "../../domain/types";
-import { cards, notes, type MockCard } from "./state";
+import type { Backlink, DictionaryEntry, NoteCard, NoteFile, NoteSummary, RenameOutcome, SearchResult } from "../../domain/types";
+import { documentKindOf, isWordGroupPath, stripDocumentExtension } from "../../domain/documentKind";
+import { createEntry, parseWordGroup, serializeWordGroup } from "../../domain/wordGroup";
+import { cards, makeCard, notes, type MockCard } from "./state";
 
 /**
  * 笔记域演示处理：文件树、笔记读写、文件夹操作与全文搜索。
@@ -8,9 +10,9 @@ import { cards, notes, type MockCard } from "./state";
  * 在 Rust 后端，前端本就不直接碰文件）。不实现任何业务规则。
  */
 
-/** 从路径推导标题：取最后一个路径段并去掉 .md 后缀。 */
+/** 从路径推导标题：取最后一个路径段并去掉文档扩展名（.md / .qword）。 */
 export function titleFromPath(path: string): string {
-  return path.split("/").pop()?.replace(/\.md$/, "") ?? path;
+  return stripDocumentExtension(path.split("/").pop() ?? path);
 }
 
 /** 提取正文中以 # 开头的标签，用于笔记摘要展示。 */
@@ -45,7 +47,8 @@ export function noteSummaries(): NoteSummary[] {
     result.push({
       path,
       title: titleFromPath(path),
-      tagsJson: JSON.stringify(tagsFromContent(note.content)),
+      // 单词组不参与标签与双链：演示摘要同样不解析 JSON 正文里的标签。
+      tagsJson: isWordGroupPath(path) ? "[]" : JSON.stringify(tagsFromContent(note.content)),
       aliases: [],
       cardCount,
       dueCount,
@@ -64,11 +67,87 @@ export function readNote(path: string): NoteFile {
   return { path, title: titleFromPath(path), content: note.content, mtime: note.mtime };
 }
 
-/** 写入笔记正文（演示级，统一换行符）。 */
+/**
+ * 写入笔记正文（演示级，统一换行符）。
+ * 单词组额外按页面同步演示卡片，模拟"保存时物化"；解析失败只跳过同步，不复刻后端报错。
+ */
 export function writeNote(path: string, content: string): number {
   const now = Math.floor(Date.now() / 1000);
-  notes.set(path, { content: content.replace(/\r\n/g, "\n"), mtime: now });
+  const normalized = content.replace(/\r\n/g, "\n");
+  notes.set(path, { content: normalized, mtime: now });
+  if (documentKindOf(path) === "wordGroup") {
+    syncWordGroupCards(path, normalized);
+  }
   return now;
+}
+
+/**
+ * 演示级卡片同步：完整页新建/更新 vocabulary 卡（id 就是页面 id），
+ * 草稿页不新建、已有同 id 卡片原样保留，页面消失才删卡。不复制后端的校验与冲突策略。
+ */
+function syncWordGroupCards(path: string, content: string): void {
+  const result = parseWordGroup(content);
+  if (!result.ok) return;
+  const existing = new Map<string, MockCard>();
+  for (const card of cards.values()) {
+    if (card.notePath === path) existing.set(card.id, card);
+  }
+  const kept = new Set<string>();
+  result.document.words.forEach((page, index) => {
+    const complete = page.word.trim().length > 0 && page.meaning.trim().length > 0;
+    const card = existing.get(page.id);
+    if (!complete) {
+      // 草稿页：不新建，已有卡片原样保留（避免编辑中间态丢复习历史）。
+      if (card) kept.add(card.id);
+      return;
+    }
+    kept.add(page.id);
+    if (card) {
+      card.front = page.meaning;
+      card.back = page.word;
+      card.detail = page.phonetic;
+      card.example = page.example;
+      card.position = index;
+      return;
+    }
+    // 同 id 已属于其它笔记时不抢占，演示环境直接跳过。
+    if (cards.has(page.id)) return;
+    const created = makeCard(path, "vocabulary", page.meaning, page.word, page.phonetic, page.example, index);
+    created.id = page.id;
+    cards.set(created.id, created);
+  });
+  for (const id of existing.keys()) {
+    if (!kept.has(id)) cards.delete(id);
+  }
+}
+
+/** 新建单词组文件（演示级）：写入含一个空页的 JSON，不产生 .md。 */
+export function createWordGroup(folder: string, rawTitle: string): NoteFile {
+  const now = Math.floor(Date.now() / 1000);
+  const title = stripDocumentExtension(rawTitle.endsWith(".qword") ? rawTitle : `${rawTitle}.qword`);
+  const path = folder ? `${folder}/${title}.qword` : `${title}.qword`;
+  if (notes.has(path)) {
+    throw new Error("同名单词组已存在");
+  }
+  const content = serializeWordGroup({ formatVersion: 1, words: [createEntry()] });
+  notes.set(path, { content, mtime: now });
+  return { path, title, content, mtime: now };
+}
+
+/** 演示用小词表：只覆盖种子词与常见示例，未收录返回 null（与真实 ECDICT 同形）。 */
+const MOCK_DICTIONARY: Readonly<Record<string, Omit<DictionaryEntry, "word">>> = {
+  ephemeral: { phonetic: "/ɪˈfemərəl/", translation: "adj. 短暂的；转瞬即逝的", definition: "lasting for a very short time", pos: "adj.", collins: 1, oxford: 1, bnc: 12000, frq: 9800, exchange: "s:ephemerals" },
+  contemplate: { phonetic: "/ˈkɑːntəmpleɪt/", translation: "v. 深入思考；仔细考虑", definition: "think about something deeply", pos: "v.", collins: 2, oxford: 1, bnc: 7000, frq: 6400, exchange: "p:contemplated" },
+  resilient: { phonetic: "/rɪˈzɪliənt/", translation: "adj. 有复原力的；能迅速恢复的", definition: "able to recover quickly", pos: "adj.", collins: 2, oxford: 1, bnc: 9000, frq: 8200, exchange: "s:resilients" },
+  ubiquitous: { phonetic: "/juːˈbɪkwɪtəs/", translation: "adj. 无处不在的", definition: "present everywhere", pos: "adj.", collins: 1, oxford: 0, bnc: 15000, frq: 13000, exchange: "" },
+  meticulous: { phonetic: "/məˈtɪkjələs/", translation: "adj. 一丝不苟的", definition: "showing great attention to detail", pos: "adj.", collins: 1, oxford: 0, bnc: 14000, frq: 12000, exchange: "" },
+};
+
+/** 演示级词典查询：大小写与首尾空白不敏感，未收录返回 null。 */
+export function lookupDictionaryWord(rawWord: string): DictionaryEntry | null {
+  const word = rawWord.trim().toLowerCase();
+  const hit = MOCK_DICTIONARY[word];
+  return hit ? { word, ...hit } : null;
 }
 
 /** 新建笔记文件（演示级）。 */

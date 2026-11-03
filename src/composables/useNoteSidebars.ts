@@ -25,6 +25,8 @@ export interface NoteSidebarsOptions {
   createNote: (title: string, folder: string) => Promise<boolean>;
   /** 通用确认框：新建笔记前确认，避免误点凭空生成文件。 */
   askConfirm: (request: ConfirmRequest) => Promise<boolean>;
+  /** 双链候选（已排除单词组）；缺省退回 store 全量列表，兼容既有测试与调用方。 */
+  linkTargets?: Ref<NoteSummary[]>;
 }
 
 /**
@@ -62,7 +64,8 @@ export function useNoteSidebars(options: NoteSidebarsOptions) {
     // #标题 只影响跳转位置，不参与"这是哪篇笔记"的判定。
     const wanted = splitWikiTarget(target).note.trim();
     if (!from || !wanted) return;
-    const resolved = resolveLink(wanted, from, notes.value as NoteSummary[]);
+    const candidates = options.linkTargets?.value ?? (notes.value as NoteSummary[]);
+    const resolved = resolveLink(wanted, from, candidates);
     if (resolved) {
       await options.openNote(resolved);
       return;

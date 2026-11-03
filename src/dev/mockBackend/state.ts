@@ -1,4 +1,5 @@
 import type { CardSource, ProviderSummary } from "../../domain/types";
+import { serializeWordGroup, type WordEntry } from "../../domain/wordGroup";
 
 /**
  * 浏览器演示环境的“内存数据库”。
@@ -206,7 +207,31 @@ A resilient system recovers without losing its structure. ^qc-card-resilient
     }
     cards.set(id, card);
   }
+  // 演示种子单词组：页面 id 与卡片 id 一致，模拟后端保存后的物化结果。
+  seedWordGroup(now);
   cardSequence = seedCards.length;
+}
+
+/**
+ * 演示种子单词组。
+ *
+ * 契约：两张完整页（已有卡片）+ 一张草稿页（不建卡），用来展示分页编辑与只读卡片区；
+ * 卡片 id 直接等于页面 id，与后端物化规则一致，但不复制任何校验/同步算法。
+ */
+function seedWordGroup(now: number): void {
+  const path = "英语/高频词 · 单词组.qword";
+  const words: WordEntry[] = [
+    { id: "seed-wg-ephemeral", word: "ephemeral", phonetic: "/ɪˈfemərəl/", meaning: "短暂的；转瞬即逝的", example: "Fame in the digital age can be remarkably ephemeral." },
+    { id: "seed-wg-ubiquitous", word: "ubiquitous", phonetic: "/juːˈbɪkwɪtəs/", meaning: "无处不在的", example: "Smartphones have become ubiquitous in daily life." },
+    { id: "seed-wg-draft", word: "meticulous", phonetic: "", meaning: "", example: "" },
+  ];
+  notes.set(path, { content: serializeWordGroup({ formatVersion: 1, words }), mtime: now });
+  for (const [index, entry] of words.entries()) {
+    if (!entry.word.trim() || !entry.meaning.trim()) continue;
+    const card = makeCard(path, "vocabulary", entry.meaning, entry.word, entry.phonetic, entry.example, index);
+    card.id = entry.id;
+    cards.set(card.id, card);
+  }
 }
 
 /**

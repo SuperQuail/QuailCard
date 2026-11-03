@@ -8,10 +8,14 @@ export interface ContextTarget {
   y: number;
 }
 
-/** 菜单尺寸（视口钳制用）：宽度与最长变体的高度。 */
+/** 菜单尺寸（视口钳制用）：宽度与各变体的高度；新增菜单项必须同步这里。 */
 const MENU_WIDTH = 160;
-const FOLDER_MENU_HEIGHT = 130;
-const SIMPLE_MENU_HEIGHT = 96;
+/** 文件夹菜单：新建笔记 / 新建单词组 / 新建文件夹 / 重命名 / 删除 五项。 */
+const FOLDER_MENU_HEIGHT = 162;
+/** 空白处菜单：新建笔记 / 新建单词组 / 新建文件夹 三项。 */
+const BLANK_MENU_HEIGHT = 100;
+/** 笔记菜单：重命名 / 删除 两项。 */
+const NOTE_MENU_HEIGHT = 96;
 
 /**
  * 文件树右键菜单状态：打开时按视口尺寸钳制坐标，避免菜单溢出屏幕。
@@ -38,14 +42,14 @@ export function useTreeContextMenu() {
   /** 打开笔记右键菜单。 */
   function openNoteMenu(path: string, event: MouseEvent): void {
     event.preventDefault();
-    const { x, y } = clamp(event.clientX, event.clientY, SIMPLE_MENU_HEIGHT);
+    const { x, y } = clamp(event.clientX, event.clientY, NOTE_MENU_HEIGHT);
     context.value = { kind: "note", key: path, x, y };
   }
 
   /** 打开树区空白处的右键菜单。 */
   function openBlankMenu(event: MouseEvent): void {
     event.preventDefault();
-    const { x, y } = clamp(event.clientX, event.clientY, SIMPLE_MENU_HEIGHT);
+    const { x, y } = clamp(event.clientX, event.clientY, BLANK_MENU_HEIGHT);
     context.value = { kind: "blank", key: "", x, y };
   }
 

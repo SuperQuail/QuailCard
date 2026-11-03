@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FilePlus2, FolderPlus, Pencil, Trash2 } from "@lucide/vue";
+import { FilePlus2, FolderPlus, Languages, Pencil, Trash2 } from "@lucide/vue";
 import type { ContextTarget } from "./useTreeContextMenu";
 
 /**
@@ -10,6 +10,7 @@ defineProps<{ context: ContextTarget }>();
 
 const emit = defineEmits<{
   "create-note": [parent: string | null];
+  "create-word-group": [parent: string | null];
   "create-folder": [parent: string | null];
   rename: [kind: "folder" | "note", key: string];
   remove: [kind: "folder" | "note", key: string];
@@ -27,6 +28,9 @@ const MENU_ITEM = "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-
         <button type="button" :class="[MENU_ITEM, 'text-ink-2']" @click="emit('create-note', context.key)">
           <FilePlus2 :size="13" />新建笔记
         </button>
+        <button type="button" :class="[MENU_ITEM, 'text-ink-2']" @click="emit('create-word-group', context.key)">
+          <Languages :size="13" />新建单词组
+        </button>
         <button type="button" :class="[MENU_ITEM, 'text-ink-2']" @click="emit('create-folder', context.key)">
           <FolderPlus :size="13" />新建文件夹
         </button>
@@ -40,6 +44,9 @@ const MENU_ITEM = "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-
       <template v-else-if="context.kind === 'blank'">
         <button type="button" :class="[MENU_ITEM, 'text-ink-2']" @click="emit('create-note', null)">
           <FilePlus2 :size="13" />新建笔记
+        </button>
+        <button type="button" :class="[MENU_ITEM, 'text-ink-2']" @click="emit('create-word-group', null)">
+          <Languages :size="13" />新建单词组
         </button>
         <button type="button" :class="[MENU_ITEM, 'text-ink-2']" @click="emit('create-folder', null)">
           <FolderPlus :size="13" />新建文件夹

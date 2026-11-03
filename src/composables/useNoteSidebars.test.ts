@@ -86,4 +86,18 @@ describe("打开双链", () => {
     await openLink("   ");
     expect(askConfirm).not.toHaveBeenCalled();
   });
+
+  /** 单词组不参与双链解析：候选过滤后按"未解析"处理，走新建确认而不是打开组。 */
+  test("单词组不在候选里，按未解析链接处理", async () => {
+    notes.value = [note("英语/核心词.qword", "核心词")];
+    activeNotePath.value = "英语/笔记.md";
+    const openNote = vi.fn(async () => {});
+    const askConfirm = vi.fn(async () => true);
+    const createNote = vi.fn(async () => true);
+    const { openLink } = useNoteSidebars({ editor: editorSpy().editor, openNote, createNote, askConfirm, linkTargets: ref([]) });
+    await openLink("核心词");
+    expect(openNote).not.toHaveBeenCalled();
+    expect(askConfirm).toHaveBeenCalledTimes(1);
+    expect(createNote).toHaveBeenCalledWith("核心词", "英语");
+  });
 });

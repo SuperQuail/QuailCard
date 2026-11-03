@@ -101,6 +101,10 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
     }
     case "create_note_file":
       return notesDomain.createNoteFile(String(args?.folder ?? ""), String(args?.title ?? "")) as T;
+    case "create_word_group":
+      return notesDomain.createWordGroup(String(args?.folder ?? ""), String(args?.title ?? "")) as T;
+    case "lookup_dictionary_word":
+      return notesDomain.lookupDictionaryWord(String(args?.word ?? "")) as T;
     case "create_folder":
       // 演示环境不维护空文件夹：创建文件夹本身无副作用，返回 undefined。
       return undefined as T;

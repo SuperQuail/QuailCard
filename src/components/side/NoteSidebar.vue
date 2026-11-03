@@ -26,6 +26,7 @@ defineProps<{
 const emit = defineEmits<{
   "select-note": [path: string];
   "note-created": [folder: string, title: string];
+  "word-group-created": [folder: string, title: string];
   "folder-created": [path: string];
   "rename-note": [oldPath: string, newPath: string, done: (error?: string) => void];
   "delete-note": [path: string];
@@ -63,6 +64,7 @@ function selectTab(id: string): void {
         :path-change="pathChange"
         @select-note="emit('select-note', $event)"
         @note-created="(folder, title) => emit('note-created', folder, title)"
+        @word-group-created="(folder, title) => emit('word-group-created', folder, title)"
         @folder-created="emit('folder-created', $event)"
         @rename-note="(oldPath, newPath, done) => emit('rename-note', oldPath, newPath, done)"
         @delete-note="emit('delete-note', $event)"

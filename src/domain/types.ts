@@ -47,6 +47,31 @@ export interface NoteFile {
   mtime: number;
 }
 
+/**
+ * 内置 ECDICT 词典条目：lookup_dictionary_word 的返回，未收录时命令返回 null。
+ *
+ * 契约：与 src-tauri/src/dictionary.rs::DictionaryEntry 同构，字段统一 camelCase；
+ * 除 word 外都可能为 null（词典缺列），前端只取音标，其余字段留给后续扩展。
+ */
+export interface DictionaryEntry {
+  word: string;
+  phonetic: string | null;
+  translation: string | null;
+  definition: string | null;
+  /** 词性缩写，如 "n." / "adj."。 */
+  pos: string | null;
+  /** 柯林斯星级，0 表示未收录。 */
+  collins: number | null;
+  /** 牛津 3000 核心词标记。 */
+  oxford: number | null;
+  /** 英国国家语料库词频排名。 */
+  bnc: number | null;
+  /** COCA 词频排名。 */
+  frq: number | null;
+  /** 词形变化描述。 */
+  exchange: string | null;
+}
+
 /** 卡片面板展示的单张卡片及调度状态。 */
 export interface CardSource {
   from: number;

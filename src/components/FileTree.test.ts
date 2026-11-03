@@ -407,3 +407,63 @@ describe("FileTree 拖拽移动", () => {
     expect(wrapper.emitted("select-note")).toEqual([["单词.md"]]);
   });
 });
+
+describe("FileTree 单词组入口", () => {
+  /** 右键文件夹：菜单出现「新建单词组」，行内输入后用父级 folder 与名称上抛。 */
+  test("右键文件夹新建单词组", async () => {
+    const wrapper = mountTree({ notes: [testNote("英语/单词.md")], folderNames: ["英语"], activeNotePath: null, dueCount: 0 });
+    const folderRow = wrapper.findAll("button").find((button) => button.text().includes("英语"));
+    await folderRow!.trigger("contextmenu", { clientX: 60, clientY: 60 });
+    const create = [...document.body.querySelectorAll("button")].find((button) => button.textContent?.trim() === "新建单词组");
+    expect(create).toBeDefined();
+    create!.click();
+    await wrapper.vm.$nextTick();
+    const input = wrapper.get("input.tree-input");
+    expect(input.attributes("placeholder")).toBe("单词组名称");
+    await input.setValue("核心词");
+    await input.trigger("keyup.enter");
+    expect(wrapper.emitted("word-group-created")).toEqual([["英语", "核心词"]]);
+  });
+
+  /** 右键空白处：新建单词组落到当前笔记所在目录。 */
+  test("右键空白处新建单词组使用当前笔记目录", async () => {
+    const wrapper = mountTree({ notes: [testNote("英语/单词.md")], folderNames: ["英语"], activeNotePath: "英语/单词.md", dueCount: 0 });
+    await wrapper.get(".file-tree").trigger("contextmenu", { clientX: 300, clientY: 300 });
+    [...document.body.querySelectorAll("button")].find((button) => button.textContent?.trim() === "新建单词组")!.click();
+    await wrapper.vm.$nextTick();
+    await wrapper.get("input.tree-input").setValue("核心词");
+    await wrapper.get("input.tree-input").trigger("keyup.enter");
+    expect(wrapper.emitted("word-group-created")).toEqual([["英语", "核心词"]]);
+  });
+
+  /** 组行图标使用 Languages，Markdown 笔记保持文件图标。 */
+  test("单词组行显示专用图标", () => {
+    const wrapper = mountTree({
+      notes: [{ ...testNote("英语/核心词.qword"), title: "核心词" }, testNote("英语/笔记.md")],
+      folderNames: ["英语"],
+      activeNotePath: null,
+      dueCount: 0,
+    });
+    expect(wrapper.findAll('svg[aria-label="单词组"]')).toHaveLength(1);
+  });
+
+  /** 改名按旧路径补全扩展名：x.qword 保持 .qword，不会变成 x.md。 */
+  test("改名单词组保留 .qword 扩展名", async () => {
+    const wrapper = mountTree({
+      notes: [{ ...testNote("英语/核心词.qword"), title: "核心词" }],
+      folderNames: ["英语"],
+      activeNotePath: null,
+      dueCount: 0,
+    });
+    await rowByText(wrapper, "核心词").trigger("contextmenu", { clientX: 60, clientY: 60 });
+    [...document.body.querySelectorAll("button")].find((button) => button.textContent?.trim() === "重命名")!.click();
+    await wrapper.vm.$nextTick();
+    const input = wrapper.get("input.tree-input");
+    expect((input.element as HTMLInputElement).value).toBe("核心词");
+    await input.setValue("高频词");
+    await input.trigger("keyup.enter");
+    const event = wrapper.emitted("rename-note")![0] as [string, string, (error?: string) => void];
+    expect(event[0]).toBe("英语/核心词.qword");
+    expect(event[1]).toBe("英语/高频词.qword");
+  });
+});
