@@ -420,8 +420,6 @@ watch(() => theme.value, applyTheme);
           :content="activeNoteContent"
           :read-only="noteOperationBusy"
           @save-content="updateNoteDraft"
-          @start-review="() => void startReviewCurrent()"
-          @start-typing="() => void startTypingCurrent()"
         />
         <EditorPane
           v-else-if="activeNote"
@@ -474,7 +472,6 @@ watch(() => theme.value, applyTheme);
             @open-ai-split="openAiSplit"
             @start-review="() => void startReviewCurrent()"
             @start-typing="() => void startTypingCurrent()"
-            @collapse="panelOpen = false"
             @jump="jumpToHeading"
             @open-backlink="(path, line) => void openBacklink(path, line)"
           />

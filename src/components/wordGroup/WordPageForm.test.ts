@@ -35,7 +35,7 @@ describe("单词页表单", () => {
   test("查询音标按钮可以覆盖手填并归一化字符", async () => {
     const lookupWord = vi.fn(async (word: string) => dictionaryEntry(word, "i'femәrəl"));
     const wrapper = mount(WordPageForm, { props: { entry: entry({ phonetic: "/manual/" }), lookupWord } });
-    await wrapper.findAll("button").find((button) => button.text().includes("查询音标"))!.trigger("click");
+    await wrapper.get('[aria-label="查询音标"]').trigger("click");
     await flushPromises();
     const events = wrapper.emitted("update:entry")!;
     expect((events[events.length - 1][0] as WordEntry).phonetic).toBe("/iˈfemərəl/");
@@ -61,19 +61,19 @@ describe("单词页表单", () => {
   test("未收录时给出可手填提示，不弹错误", async () => {
     const lookupWord = vi.fn(async () => null);
     const wrapper = mount(WordPageForm, { props: { entry: entry(), lookupWord } });
-    await wrapper.findAll("button").find((button) => button.text().includes("查询音标"))!.trigger("click");
+    await wrapper.get('[aria-label="查询音标"]').trigger("click");
     await flushPromises();
     expect(wrapper.text()).toContain("词典未收录");
     expect(wrapper.emitted("update:entry")).toBeUndefined();
     wrapper.unmount();
   });
 
-  test("完整页提示已生成卡片，缺字段提示填写要求", async () => {
-    const draft = mount(WordPageForm, { props: { entry: entry({ meaning: "" }) } });
-    expect(draft.text()).toContain("填写单词与释义后自动生成卡片");
-    const complete = mount(WordPageForm, { props: { entry: entry({ meaning: "短暂的" }) } });
-    expect(complete.text()).toContain("已生成卡片");
-    draft.unmount();
-    complete.unmount();
+  test("本页操作通过插槽放在单词旁边", () => {
+    const wrapper = mount(WordPageForm, {
+      props: { entry: entry() },
+      slots: { actions: '<button aria-label="删除本页">删</button>' },
+    });
+    expect(wrapper.find('[aria-label="删除本页"]').exists()).toBe(true);
+    wrapper.unmount();
   });
 });

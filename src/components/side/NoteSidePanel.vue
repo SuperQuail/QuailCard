@@ -32,7 +32,6 @@ const emit = defineEmits<{
   "open-ai-split": [];
   "start-review": [];
   "start-typing": [];
-  collapse: [];
   jump: [from: number];
   "open-backlink": [path: string, line: number];
 }>();
@@ -91,7 +90,6 @@ function selectTab(id: string): void {
         @open-ai-split="emit('open-ai-split')"
         @start-review="emit('start-review')"
         @start-typing="emit('start-typing')"
-        @collapse="emit('collapse')"
       />
       <OutlinePanel
         v-else-if="activeTab === 'outline'"

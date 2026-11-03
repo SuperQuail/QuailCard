@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, Brain, Keyboard, PanelRightClose, Pencil, Plus, Sparkles, Trash2, Type } from "@lucide/vue";
+import { BookOpen, Brain, Keyboard, Pencil, Plus, Sparkles, Trash2, Type } from "@lucide/vue";
 import { computed } from "vue";
 import type { NoteCard } from "../domain/types";
 
@@ -21,7 +21,6 @@ const emit = defineEmits<{
   "open-ai-split": [];
   "start-review": [];
   "start-typing": [];
-  "collapse": [];
 }>();
 
 /** 只有存在单词卡时才能进入打字背诵；问答卡没有可打的英文。 */
@@ -46,12 +45,9 @@ function kindIcon(kind: string) {
 
 <template>
   <div class="relative flex h-full flex-col">
-    <!-- 面板头：卡片计数 + 收起 -->
-    <header class="flex items-center justify-between border-b border-hairline py-2 pr-2 pl-3">
+    <!-- 面板头只显示计数：收起侧栏统一由标签栏右侧按钮（Alt+B）负责，不在这里重复。 -->
+    <header class="flex items-center border-b border-hairline px-3 py-2">
       <p class="flex items-center gap-1 text-[11px] font-medium text-ink-2">{{ wordGroup ? "单词" : "卡片" }} {{ cards.length }}</p>
-      <button type="button" class="icon-btn" title="收起侧栏" @click="emit('collapse')">
-        <PanelRightClose :size="15" :stroke-width="1.8" />
-      </button>
     </header>
 
     <div class="soft-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-2">

@@ -38,6 +38,8 @@ describe("单词组卡片区", () => {
     expect(wrapper.get("footer").text()).toContain("复习本组");
     await wrapper.get("footer button").trigger("click");
     expect(wrapper.emitted("start-review")).toHaveLength(1);
+    // 收起侧栏只由标签栏按钮负责，面板头不再重复一个。
+    expect(wrapper.find('[title="收起侧栏"]').exists()).toBe(false);
     wrapper.unmount();
   });
 

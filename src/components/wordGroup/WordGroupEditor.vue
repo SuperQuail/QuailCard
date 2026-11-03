@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Brain, Keyboard, Plus, Trash2 } from "@lucide/vue";
+import { Plus, Trash2 } from "@lucide/vue";
 import NoteTabs from "../NoteTabs.vue";
 import NoteToolbar from "../NoteToolbar.vue";
-import WordGroupPager from "./WordGroupPager.vue";
+import WordGroupList from "./WordGroupList.vue";
 import WordPageForm from "./WordPageForm.vue";
 import { documentTitleOf } from "../../domain/documentKind";
 import {
@@ -23,6 +23,8 @@ import type { DictionaryEntry } from "../../domain/types";
  * - 标签行复用 NoteTabs + NoteToolbar，但永远不提供阅读模式（组不是 Markdown 正文）。
  * - 解析失败只读展示，绝不写盘；空组仍允许添加单词。
  * - 本组件是唯一序列化入口，保存服务只负责防抖写盘，后端负责卡片物化。
+ * - 左右分栏：左侧列表固定显示，是唯一的翻页与「添加单词」入口（另有 Alt+←/→ 快捷键）。
+ * - 右侧第一行是单词本身，只放本页的删除；打字背诵与复习本组在右侧卡片面板里，不在这里重复。
  */
 const props = defineProps<{
   notePath: string;
@@ -41,8 +43,6 @@ const emit = defineEmits<{
   "close-tab": [path: string];
   "toggle-panel": [];
   "save-content": [notePath: string, content: string];
-  "start-review": [];
-  "start-typing": [];
 }>();
 
 const pages = ref<WordEntry[]>([]);
@@ -51,12 +51,15 @@ const current = ref(0);
 const form = ref<InstanceType<typeof WordPageForm> | null>(null);
 /** 最近一次由本组件序列化并上抛的内容：用于区分"自己保存的回显"与"外部重载"。 */
 let lastSerialized = "";
+/** 是否存在尚未回显的本地改动：只影响右上角的保存状态文案。 */
+const dirty = ref(false);
 
 const title = computed(() => documentTitleOf(props.notePath));
 const pageCount = computed(() => pages.value.length);
 const currentEntry = computed<WordEntry | null>(() => pages.value[current.value] ?? null);
 const readOnly = computed(() => Boolean(props.readOnly) || parseError.value.length > 0);
-const pageLabel = computed(() => (pageCount.value === 0 ? "还没有单词" : `第 ${current.value + 1} / ${pageCount.value} 页`));
+/** 能否新增页：只读与页数上限共同约束。 */
+const canAdd = computed(() => !readOnly.value && pageCount.value < WORD_GROUP_MAX_PAGES);
 
 /** 载入磁盘内容：只接受基本形状合法的文档，失败时清空并进入只读。 */
 function load(content: string): void {
@@ -77,7 +80,10 @@ load(props.content);
 
 /** 外部重载（重扫、改名为当前路径等）覆盖本地状态；自己保存的回显不打断输入。 */
 watch(() => props.content, (content) => {
-  if (content === lastSerialized) return;
+  if (content === lastSerialized) {
+    dirty.value = false;
+    return;
+  }
   load(content);
 });
 
@@ -85,6 +91,7 @@ watch(() => props.content, (content) => {
 watch(() => props.notePath, () => {
   current.value = 0;
   lastSerialized = "";
+  dirty.value = false;
   load(props.content);
 });
 
@@ -92,6 +99,7 @@ watch(() => props.notePath, () => {
 function touch(): void {
   if (readOnly.value) return;
   lastSerialized = serializeWordGroup({ formatVersion: WORD_GROUP_FORMAT_VERSION, words: pages.value });
+  dirty.value = true;
   emit("save-content", props.notePath, lastSerialized);
 }
 
@@ -128,7 +136,7 @@ function goTo(index: number): void {
   const next = Math.max(0, Math.min(index, pages.value.length - 1));
   if (next === current.value) return;
   current.value = next;
-  void focusWord();
+  if (!readOnly.value) void focusWord();
 }
 
 /** 翻页后把焦点交给单词输入，方便连续录入。 */
@@ -180,62 +188,45 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleKeydown));
     </NoteTabs>
     <NoteToolbar v-else :panel-open="panelOpen" :reading-enabled="false" @toggle-panel="emit('toggle-panel')" />
 
-    <div class="soft-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-4">
-      <div class="mx-auto flex h-full w-full max-w-3xl flex-col">
-        <header class="flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-3">
-          <div class="min-w-0">
-            <p class="truncate text-[15px] font-semibold">{{ title }}</p>
-            <p class="text-[11px] text-ink-3">{{ pageLabel }} · 单词组</p>
+    <div class="flex min-h-0 flex-1">
+      <!-- 左栏固定显示：组内导航、添加单词都在这里，右侧不再需要分页控件。 -->
+      <aside class="w-56 shrink-0 border-r border-hairline">
+        <WordGroupList :pages="pages" :current="current" :can-add="canAdd" @select="goTo" @add="void addPage()" />
+      </aside>
+
+      <div class="soft-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto px-8 py-6">
+        <div class="flex min-h-0 w-full flex-1 flex-col">
+          <p v-if="!tabs?.length" class="mb-3 shrink-0 truncate text-[13px] font-medium text-ink-2">{{ title }}</p>
+
+          <p v-if="parseError" role="alert" class="mb-4 shrink-0 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-[12px] text-danger">
+            {{ parseError }}
+          </p>
+
+          <WordPageForm
+            v-if="currentEntry"
+            :key="currentEntry.id"
+            ref="form"
+            :entry="currentEntry"
+            :read-only="readOnly"
+            :lookup-word="lookupWord"
+            @update:entry="updateEntry"
+          >
+            <!-- 单词行右侧只留本页操作：保存状态是瞬时的，删除作用于这一页才有必要出现在这里。 -->
+            <template #actions>
+              <span v-if="dirty" class="text-[11px] text-ink-3" aria-live="polite">保存中…</span>
+              <button type="button" class="icon-btn" aria-label="删除本页" title="删除本页；该页的复习记录会一并删除" :disabled="readOnly" @click="deletePage">
+                <Trash2 :size="15" />
+              </button>
+            </template>
+          </WordPageForm>
+
+          <div v-else-if="!parseError" class="flex min-h-0 flex-1 flex-col items-center justify-center py-16 text-center">
+            <p class="text-[13px] text-ink-2">还没有单词</p>
+            <p class="mt-1 text-[11px] leading-5 text-ink-3">添加一页，填好单词与释义后会自动生成可复习的卡片。</p>
+            <button type="button" class="primary-btn mt-4" :disabled="!canAdd" @click="void addPage()">
+              <Plus :size="14" />添加单词
+            </button>
           </div>
-          <div class="flex flex-wrap items-center gap-1.5">
-            <WordGroupPager :page="current" :count="pageCount" :read-only="readOnly" @change="goTo" />
-            <button type="button" class="ghost-btn justify-center border border-hairline" :disabled="readOnly" @click="void addPage()">
-              <Plus :size="13" />添加单词
-            </button>
-            <button
-              type="button"
-              class="ghost-btn justify-center border border-hairline"
-              title="删除本页；该页的复习记录会一并删除"
-              :disabled="readOnly || pageCount === 0"
-              @click="deletePage"
-            >
-              <Trash2 :size="13" />删除本页
-            </button>
-            <button
-              type="button"
-              class="ghost-btn justify-center border border-hairline"
-              title="看中文打英文，逐字判定并记忆巩固"
-              :disabled="pageCount === 0"
-              @click="emit('start-typing')"
-            >
-              <Keyboard :size="13" />打字背诵
-            </button>
-            <button type="button" class="primary-btn" :disabled="pageCount === 0" @click="emit('start-review')">
-              <Brain :size="14" />复习本组
-            </button>
-          </div>
-        </header>
-
-        <p v-if="parseError" role="alert" class="mt-3 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-[12px] text-danger">
-          {{ parseError }}
-        </p>
-
-        <WordPageForm
-          v-if="currentEntry"
-          :key="currentEntry.id"
-          ref="form"
-          :entry="currentEntry"
-          :read-only="readOnly"
-          :lookup-word="lookupWord"
-          @update:entry="updateEntry"
-        />
-
-        <div v-else-if="!parseError" class="flex flex-1 flex-col items-center justify-center py-16 text-center">
-          <p class="text-[13px] text-ink-2">还没有单词</p>
-          <p class="mt-1 text-[11px] text-ink-3">添加一页，填好单词与释义后会自动生成可复习的卡片。</p>
-          <button type="button" class="primary-btn mt-4" @click="void addPage()">
-            <Plus :size="14" />添加单词
-          </button>
         </div>
       </div>
     </div>

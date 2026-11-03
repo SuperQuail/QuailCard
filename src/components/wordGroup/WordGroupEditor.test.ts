@@ -30,6 +30,12 @@ function mountEditor(content: string, extra: Record<string, unknown> = {}): Retu
   return wrapper;
 }
 
+/** 当前页由左侧列表的 aria-current 表达；返回 0 起始下标的字符串，便于断言。 */
+function selectedPage(wrapper: ReturnType<typeof mount>): string {
+  const label = wrapper.get('.word-group-list [aria-current="true"]').attributes("aria-label") ?? "";
+  return String(Number(label.replace(/\D/g, "")) - 1);
+}
+
 /** 取最后一次上抛的 [路径, JSON]：断言只看最新一次保存。 */
 function lastSave(wrapper: ReturnType<typeof mount>): [string, string] {
   const events = wrapper.emitted("save-content")!;
@@ -37,15 +43,14 @@ function lastSave(wrapper: ReturnType<typeof mount>): [string, string] {
 }
 
 describe("单词组分页编辑", () => {
-  test("展示当前页与总页数，按钮与下拉都能翻页", async () => {
+  test("点击左侧列表翻页，右侧不再有分页控件", async () => {
     const wrapper = mountEditor(contentOf([{ word: "alpha", meaning: "甲" }, { word: "beta", meaning: "乙" }]));
-    expect(wrapper.text()).toContain("第 1 / 2 页");
-    expect(wrapper.get('[aria-label="上一页"]').attributes("disabled")).toBeDefined();
-    await wrapper.get('[aria-label="下一页"]').trigger("click");
+    expect(selectedPage(wrapper)).toBe("0");
+    expect(wrapper.find('[aria-label="跳转页码"]').exists()).toBe(false);
+    await wrapper.get('[aria-label="第 2 页"]').trigger("click");
     expect(wrapper.get('input[aria-label="单词"]').element).toHaveProperty("value", "beta");
-    expect(wrapper.text()).toContain("第 2 / 2 页");
-    expect(wrapper.get('[aria-label="下一页"]').attributes("disabled")).toBeDefined();
-    await wrapper.get('[aria-label="跳转页码"]').setValue("0");
+    expect(selectedPage(wrapper)).toBe("1");
+    await wrapper.get('[aria-label="第 1 页"]').trigger("click");
     expect(wrapper.get('input[aria-label="单词"]').element).toHaveProperty("value", "alpha");
   });
 
@@ -53,19 +58,19 @@ describe("单词组分页编辑", () => {
     const wrapper = mountEditor(contentOf([{ word: "alpha" }, { word: "beta" }, { word: "gamma" }]));
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", altKey: true }));
     await flushPromises();
-    expect(wrapper.text()).toContain("第 2 / 3 页");
+    expect(selectedPage(wrapper)).toBe("1");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "End" }));
     await flushPromises();
-    expect(wrapper.text()).toContain("第 3 / 3 页");
+    expect(selectedPage(wrapper)).toBe("2");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Home" }));
     await flushPromises();
-    expect(wrapper.text()).toContain("第 1 / 3 页");
+    expect(selectedPage(wrapper)).toBe("0");
     // 焦点在输入框时 Home/End 属于文本编辑，不改变页码。
     const wordInput = wrapper.get('input[aria-label="单词"]');
     (wordInput.element as HTMLInputElement).focus();
     wordInput.element.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
     await flushPromises();
-    expect(wrapper.text()).toContain("第 1 / 3 页");
+    expect(selectedPage(wrapper)).toBe("0");
   });
 
   test("编辑字段立即序列化整份 JSON 上抛", async () => {
@@ -93,14 +98,15 @@ describe("单词组分页编辑", () => {
 
   test("删除本页移除当前页并保留其余页面", async () => {
     const wrapper = mountEditor(contentOf([{ word: "alpha" }, { word: "beta" }]));
-    await wrapper.get('[aria-label="下一页"]').trigger("click");
-    await wrapper.findAll("button").find((button) => button.text().includes("删除本页"))!.trigger("click");
+    await wrapper.get('[aria-label="第 2 页"]').trigger("click");
+    await wrapper.get('[aria-label="删除本页"]').trigger("click");
     await nextTickAndFlush();
     const [, raw] = lastSave(wrapper);
     const parsed = JSON.parse(raw) as { words: WordEntry[] };
     expect(parsed.words).toHaveLength(1);
     expect(parsed.words[0].word).toBe("alpha");
-    expect(wrapper.text()).toContain("第 1 / 1 页");
+    // 列表固定显示，只剩一页时也保留。
+    expect(wrapper.findAll('.word-group-list [aria-label^="第 "]')).toHaveLength(1);
   });
 
   test("空组显示还没有单词，添加后进入第一页", async () => {
@@ -138,26 +144,57 @@ describe("单词组分页编辑", () => {
     expect(parsed.words[0].phonetic).toBe("/iˈfemərəl/");
   });
 
-  test("复习本组上抛独立事件", async () => {
-    const wrapper = mountEditor(contentOf([{ word: "alpha", meaning: "甲" }]));
-    await wrapper.findAll("button").find((button) => button.text().includes("复习本组"))!.trigger("click");
-    expect(wrapper.emitted("start-review")).toHaveLength(1);
-  });
 
-  test("打字背诵上抛独立事件，空组时按钮禁用", async () => {
-    const wrapper = mountEditor(contentOf([{ word: "alpha", meaning: "甲" }]));
-    const typing = wrapper.findAll("button").find((button) => button.text().includes("打字背诵"))!;
-    expect(typing.attributes("disabled")).toBeUndefined();
-    await typing.trigger("click");
-    expect(wrapper.emitted("start-typing")).toHaveLength(1);
-
-    const empty = mountEditor(contentOf([]));
-    const disabled = empty.findAll("button").find((button) => button.text().includes("打字背诵"))!;
-    expect(disabled.attributes("disabled")).toBeDefined();
-  });
 });
 
 /** 等待新增页触发的 nextTick 与 focus 链路完成。 */
 async function nextTickAndFlush(): Promise<void> {
   await flushPromises();
 }
+describe("单词组编辑体验", () => {
+  test("左栏列表可跳页，并在底部追加新页", async () => {
+    const wrapper = mountEditor(contentOf([
+      { word: "alpha", meaning: "甲" },
+      { word: "beta", meaning: "" },
+    ]));
+    // 列表底部的添加按钮直接追加新页。
+    await wrapper.get(".word-group-list").findAll("button").find((button) => button.text().includes("添加单词"))!.trigger("click");
+    await flushPromises();
+    expect((JSON.parse(lastSave(wrapper)[1]) as { words: WordEntry[] }).words).toHaveLength(3);
+    await wrapper.get('[aria-label="第 1 页"]').trigger("click");
+    expect(wrapper.find(".word-group-list").exists()).toBe(true);
+    await wrapper.get('[aria-label="第 2 页"]').trigger("click");
+    expect(selectedPage(wrapper)).toBe("1");
+    expect(wrapper.get('input[aria-label="单词"]').element).toHaveProperty("value", "beta");
+  });
+
+  test("保存状态：编辑中显示保存中，磁盘回显后回到已保存", async () => {
+    const wrapper = mountEditor(contentOf([{ word: "alpha", meaning: "甲" }]));
+    expect(wrapper.text()).not.toContain("保存中");
+    await wrapper.get('input[aria-label="单词"]').setValue("beta");
+    expect(wrapper.text()).toContain("保存中");
+    const [, raw] = lastSave(wrapper);
+    await wrapper.setProps({ content: raw });
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("保存中");
+  });
+
+  test("单页组也固定显示左栏列表，标题不在正文重复", () => {
+    const single = mountEditor(contentOf([{ word: "alpha", meaning: "甲" }]));
+    expect(single.find(".word-group-list").exists()).toBe(true);
+    // 标题已由标签展示，正文区不重复。
+    expect(single.get(".word-page-form").text()).not.toContain("核心词");
+  });
+
+  test("单词行右侧只留删除，复制与整组入口都不在这里", () => {
+    const wrapper = mountEditor(contentOf([{ word: "alpha", meaning: "甲" }, { word: "beta", meaning: "" }]));
+    const row = wrapper.get('input[aria-label="单词"]').element.parentElement!;
+    expect(row.querySelector('[aria-label="删除本页"]')).not.toBeNull();
+    expect(wrapper.find('[aria-label="复制本页"]').exists()).toBe(false);
+    // 打字背诵与复习本组在右侧卡片面板里，编辑区不再重复。
+    expect(wrapper.text()).not.toContain("打字背诵");
+    expect(wrapper.text()).not.toContain("复习本组");
+    expect(wrapper.text()).not.toContain("已生成");
+  });
+
+});
