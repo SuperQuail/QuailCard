@@ -1,9 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.6.0",
-  "created_at": "2026-11-03T06:29:08.458645026Z",
+  "version": "0.7.0-alpha.1",
+  "created_at": "2026-11-03T15:51:59.933257882Z",
   "mode": "pr",
-  "fingerprint": "sha256:270c289dc86b9b652df467f56ca20e56e7534e62ea3a6bc0007b95063f781036",
+  "channel": "alpha",
+  "fingerprint": "sha256:55ff26cb849327d2799abad08d4c0e0c22f473fbc4a000d60556bdb9e5ad5f99",
   "repo": {
     "host": "github.com",
     "owner": "SuperQuail",
@@ -17,72 +18,56 @@
       "cargo test --manifest-path src-tauri/Cargo.toml"
     ],
     "skipped": false,
-    "at": "2026-11-03T06:29:08.458645767Z"
+    "at": "2026-11-03T15:51:59.933258732Z"
   },
   "packages": [
     {
       "name": "quailcard",
       "path": "src-tauri",
       "resolver": "rust",
-      "current": "0.5.0",
-      "next": "0.6.0",
+      "current": "0.6.0",
+      "next": "0.7.0-alpha.1",
       "bump": "minor",
-      "tag": "app-v0.6.0",
+      "tag": "app-v0.7.0-alpha.1",
       "publish": false
     }
   ],
   "releases": [
     {
-      "version": "0.6.0",
-      "tag": "app-v0.6.0",
-      "previous_tag": "app-v0.5.0",
+      "version": "0.7.0-alpha.1",
+      "tag": "app-v0.7.0-alpha.1",
+      "previous_tag": "app-v0.6.0",
       "packages": [
         "quailcard"
-      ]
+      ],
+      "prerelease": "alpha"
     }
   ],
   "changes": [
     {
-      "file": ".changes/typing-practice.md",
+      "file": ".changes/agent-word-group.md",
       "type": "feat",
-      "scope": "typing",
+      "scope": "agent",
       "bump": "minor",
       "packages": [
         "quailcard"
       ],
-      "body": "看中文释义逐字母打出英文单词，每个单词重复多遍后进入模糊释义与已完成记录的记忆遍；带连击、手动翻页与自动朗读，练习成绩只做本次统计，不写入复习调度。",
-      "commit": "a6ed3bf02d3491ba7001108c6fe2f2245df3c666",
-      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/a6ed3bf02d3491ba7001108c6fe2f2245df3c666",
+      "body": "Agent 现在可以创建与更新单词组（`.qword`）：提交结构化词表即可写入，页 id 由后端生成，保存后立即生成单词卡片；更新按单词沿用原页与复习历史，未出现在新词表里的页会连复习记录一起删除。",
+      "commit": "9e1af4ce1dc138bb9642b6841506678e48faf478",
+      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/9e1af4ce1dc138bb9642b6841506678e48faf478",
       "author": "Wsrsq"
     },
     {
-      "file": ".changes/typing-word-group.md",
-      "type": "feat",
-      "scope": "typing",
-      "bump": "minor",
-      "packages": [
-        "quailcard"
-      ],
-      "body": "打字背诵兼容单词组：单词组编辑区可直接开始练习，范围按「本组 / 全部单词」展示；开始前先落盘并重载卡片，单词组保存后卡片变化会重建词池，避免练到已改或已删的单词。",
-      "commit": "2cc4d6606c06586b812c74e4e43750e8076157e8",
-      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/2cc4d6606c06586b812c74e4e43750e8076157e8",
-      "pull_number": 2,
-      "pull_url": "https://github.com/SuperQuail/QuailCard/pull/2",
-      "author": "Wsrsq"
-    },
-    {
-      "file": ".changes/word-group.md",
+      "file": ".changes/wordgroup-ui.md",
       "type": "feat",
       "scope": "wordgroup",
       "bump": "minor",
       "packages": [
         "quailcard"
       ],
-      "body": "新增单词组（`.qword`）文件：右键即可创建，按页编写单词并在保存时自动生成单词卡片，音标可根据单词自动查询。",
-      "commit": "2cc4d6606c06586b812c74e4e43750e8076157e8",
-      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/2cc4d6606c06586b812c74e4e43750e8076157e8",
-      "pull_number": 2,
-      "pull_url": "https://github.com/SuperQuail/QuailCard/pull/2",
+      "body": "单词组编辑界面重排：左栏单词列表常驻，搜索、筛选、翻页与「添加单词」都在这里；单词与音标并排占第一行，释义与例句并排铺满剩余高度。去掉复制本页、页码、卡片数与右侧栏重复的收起按钮，打字背诵与复习本组收敛到右侧卡片面板。",
+      "commit": "1eeb965843c512f11fbf071c9b349df54b3bc9c9",
+      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/1eeb965843c512f11fbf071c9b349df54b3bc9c9",
       "author": "Wsrsq"
     }
   ],
