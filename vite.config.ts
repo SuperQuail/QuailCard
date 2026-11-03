@@ -43,8 +43,11 @@ export default defineConfig(async () => ({
       : undefined,
     watch: {
       // Rust 由 Cargo 监听；原子写入临时目录及其内容不参与 HMR，避免 Windows EBUSY。
+      // 根 target/ 是 workspace 产物目录（/target 在 .gitignore 里），cargo 与运行中的
+      // 应用会映射 quailcard_lib.dll，chokidar 在 Windows 上监听该文件会直接 EBUSY。
       ignored: [
         "**/src-tauri/**",
+        "**/target/**",
         "**/references/**",
         "**/*.tmpdir",
         "**/*.tmpdir/**",
