@@ -30,6 +30,7 @@ pub(crate) mod video_pipeline;
 pub(crate) mod video_ports;
 pub(crate) mod video_tasks;
 mod video_work;
+pub(crate) mod word_group;
 
 use crate::{
     ai::ProviderGateway, error::CommandError, models::ProviderConfig, storage::Storage,

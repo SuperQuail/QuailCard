@@ -111,12 +111,14 @@ impl Storage {
             if notes.len() >= MAX_HITS {
                 break;
             }
-            let haystack = format!("{} {}", entry.title, entry.content).to_lowercase();
+            // 单词组没有正文：搜索文本由 word/meaning/example 派生后存进索引。
+            let text = entry.search_text.as_deref().unwrap_or(&entry.content);
+            let haystack = format!("{} {}", entry.title, text).to_lowercase();
             if tokens.iter().all(|token| haystack.contains(token)) {
                 notes.push(NoteHit {
                     path: entry.path.clone(),
                     title: entry.title.clone(),
-                    snippet: helpers::build_snippet(&entry.content, &tokens[0]),
+                    snippet: helpers::build_snippet(text, &tokens[0]),
                 });
             }
         }
@@ -202,6 +204,24 @@ mod tests {
         assert_eq!(result.notes.len(), 1);
         assert_eq!(result.cards.len(), 1);
         assert!(result.notes[0].snippet.contains("<mark>所有权</mark>"));
+    }
+
+    #[tokio::test]
+    /// 单词组没有正文：搜索使用 word/meaning/example 派生的 search_text。
+    async fn search_hits_word_group_meaning() {
+        let (storage, _config, _vault) = testutil::test_storage().await;
+        storage
+            .upsert_note_index(
+                "单词.qword",
+                r#"{"formatVersion":1,"words":[{"id":"p1","word":"ephemeral","phonetic":"/x/","meaning":"短暂的","example":"an ephemeral joy"}]}"#,
+                1,
+            )
+            .await
+            .expect("写索引失败");
+        let result = storage.search("短暂的").await.expect("搜索失败");
+        assert_eq!(result.notes.len(), 1);
+        assert_eq!(result.notes[0].path, "单词.qword");
+        assert!(result.notes[0].snippet.contains("<mark>短暂的</mark>"));
     }
 
     #[tokio::test]

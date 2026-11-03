@@ -9,12 +9,15 @@ mod agent;
 mod attachment_actions;
 mod attachments;
 mod config;
+pub(crate) mod documents;
 mod remove;
 
 pub(crate) use attachment_actions::{
     attachment_file_hints, read_attachment_bytes, write_replacing,
 };
 pub(crate) use remove::remover_for;
+
+use self::documents::{strip_known_extension, DocumentKind};
 
 #[cfg(test)]
 mod attachment_actions_tests;
@@ -109,19 +112,35 @@ impl VaultState {
         Ok(mtime)
     }
 
-    /// 新建笔记文件并返回相对路径。
+    /// 新建 Markdown 笔记文件并返回相对路径。
     pub fn create_note(&self, folder: &str, title: &str) -> Result<String, CommandError> {
-        let title = sanitize_title(title)?;
-        let relative = if folder.trim().is_empty() {
-            title.clone()
-        } else {
-            format!("{}/{}", sanitize_relative(folder)?.to_string_lossy(), title)
-        };
+        let title = sanitize_file_name(title, DocumentKind::Markdown)?;
+        let relative = join_relative(folder, &title)?;
         let path = self.resolve(&relative)?;
         if path.exists() {
             return Err(CommandError::validation("同名笔记已存在"));
         }
-        self.write_note(&relative, &format!("# {}\n", title.trim_end_matches(".md")))?;
+        let heading = strip_known_extension(&title);
+        self.write_note(&relative, &format!("# {heading}\n"))?;
+        Ok(relative)
+    }
+
+    /// 新建单词组文件并返回相对路径；内容由用例层生成并已通过校验。
+    ///
+    /// 允许与同名 Markdown 笔记并存：两者扩展名不同，标题可以相同。
+    pub fn create_word_group_file(
+        &self,
+        folder: &str,
+        title: &str,
+        content: &str,
+    ) -> Result<String, CommandError> {
+        let title = sanitize_file_name(title, DocumentKind::WordGroup)?;
+        let relative = join_relative(folder, &title)?;
+        let path = self.resolve(&relative)?;
+        if path.exists() {
+            return Err(CommandError::validation("同名单词组已存在"));
+        }
+        self.write_note(&relative, content)?;
         Ok(relative)
     }
 
@@ -135,13 +154,16 @@ impl VaultState {
         Ok(())
     }
 
-    /// 重命名笔记文件。
+    /// 重命名笔记文件；扩展名跟随旧文件（.md 仍是 .md，.qword 仍是 .qword）。
     pub fn rename_note(&self, old: &str, new: &str) -> Result<String, CommandError> {
         let source = self.resolve(old)?;
         if !source.is_file() {
             return Err(CommandError::new("NOTE_NOT_FOUND", "笔记文件不存在"));
         }
-        let new_relative = normalize_rename_target(new)?;
+        // 旧路径扩展名决定新名字补什么后缀；未知扩展名按 Markdown 处理，
+        // 保持历史上"改名总落到 .md"的兜底行为。
+        let kind = DocumentKind::of_path(old).unwrap_or(DocumentKind::Markdown);
+        let new_relative = normalize_rename_target(new, Some(kind))?;
         let target = self.resolve(&new_relative)?;
         if target.exists() {
             return Err(CommandError::validation("同名笔记已存在"));
@@ -156,7 +178,8 @@ impl VaultState {
         if !source.is_dir() {
             return Err(CommandError::new("FOLDER_NOT_FOUND", "文件夹不存在"));
         }
-        let new_relative = normalize_rename_target(new)?;
+        // 文件夹名不补文档扩展名：旧实现会追加 .md，导致改名后目录名末尾多出后缀。
+        let new_relative = normalize_rename_target(new, None)?;
         // 拖拽可以把文件夹放进任意目录；移进自身子树会让 fs::rename 失败并返回误导性错误。
         ensure_folder_move(old, &new_relative)?;
         let target = self.resolve(&new_relative)?;
@@ -167,13 +190,13 @@ impl VaultState {
         Ok(new_relative)
     }
 
-    /// 扫描 Vault 中全部 .md 文件，返回相对路径、内容与修改时间。
+    /// 扫描 Vault 中全部 Markdown 笔记与单词组文件，返回相对路径、内容与修改时间。
     pub fn scan(&self) -> Result<Vec<(String, String, i64)>, CommandError> {
         let root = self
             .root()?
             .ok_or_else(|| CommandError::new("VAULT_NOT_OPEN", "请先选择 Vault 文件夹"))?;
         let mut files = Vec::new();
-        collect_markdown_files(&root, &root, &mut files)?;
+        collect_document_files(&root, &root, &mut files)?;
         Ok(files)
     }
 }
@@ -241,14 +264,17 @@ fn ensure_folder_move(old: &str, new: &str) -> Result<(), CommandError> {
     Ok(())
 }
 
-/// 净化笔记/文件夹新名称并强制 .md 后缀。
-fn normalize_rename_target(new: &str) -> Result<String, CommandError> {
+/// 净化改名目标：kind 为 Some 时补全对应文档扩展名，None 表示文件夹名原样保留。
+fn normalize_rename_target(new: &str, kind: Option<DocumentKind>) -> Result<String, CommandError> {
     let path = sanitize_relative(new)?;
     let name = path
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_default();
-    let name = sanitize_title(&name)?;
+    let name = match kind {
+        Some(kind) => sanitize_file_name(&name, kind)?,
+        None => sanitize_plain_name(&name)?,
+    };
     let parent = path
         .parent()
         .map(|parent| parent.to_string_lossy().to_string())
@@ -259,8 +285,32 @@ fn normalize_rename_target(new: &str) -> Result<String, CommandError> {
     })
 }
 
-/// 净化文件名：去除路径分隔符与 Windows 非法字符，确保 .md 后缀。
-fn sanitize_title(title: &str) -> Result<String, CommandError> {
+/// 把文件夹与文件名拼成 Vault 相对路径；空文件夹表示 Vault 根目录。
+fn join_relative(folder: &str, name: &str) -> Result<String, CommandError> {
+    let folder = folder.trim();
+    if folder.is_empty() {
+        return Ok(name.to_string());
+    }
+    Ok(format!(
+        "{}/{name}",
+        sanitize_relative(folder)?.to_string_lossy()
+    ))
+}
+
+/// 净化文件名并补全指定文档扩展名；已带同一扩展名（大小写不敏感）时不重复追加。
+fn sanitize_file_name(title: &str, kind: DocumentKind) -> Result<String, CommandError> {
+    let mut name = sanitize_plain_name(title)?;
+    let extension = kind.extension();
+    if !name.to_lowercase().ends_with(extension) {
+        name.push_str(extension);
+    }
+    Ok(name)
+}
+
+/// 净化单个文件或文件夹名称：去除路径分隔符与 Windows 非法字符，限长 100 字符。
+///
+/// 文件夹改名复用同一套字符规则，但绝不追加任何文档扩展名。
+fn sanitize_plain_name(title: &str) -> Result<String, CommandError> {
     let mut name: String = title
         .trim()
         .chars()
@@ -276,14 +326,11 @@ fn sanitize_title(title: &str) -> Result<String, CommandError> {
     if name.is_empty() {
         return Err(CommandError::validation("名称不能为空"));
     }
-    if !name.to_lowercase().ends_with(".md") {
-        name.push_str(".md");
-    }
     Ok(name)
 }
 
-/// 递归收集目录树中的 Markdown 文件。
-fn collect_markdown_files(
+/// 递归收集目录树中的 Markdown 笔记与单词组文件。
+fn collect_document_files(
     root: &Path,
     directory: &Path,
     files: &mut Vec<(String, String, i64)>,
@@ -291,7 +338,7 @@ fn collect_markdown_files(
     for entry in std::fs::read_dir(directory)? {
         let entry = entry?;
         let path = entry.path();
-        // 内部数据目录与链接不是用户笔记，回收副本不能重新出现在列表中。
+        // 内部数据目录与链接不是用户文档，回收副本不能重新出现在列表中。
         if entry.file_name() == ".quailcard"
             || entry.file_type()?.is_symlink()
             || !path.canonicalize()?.starts_with(root)
@@ -299,41 +346,78 @@ fn collect_markdown_files(
             continue;
         }
         if path.is_dir() {
-            collect_markdown_files(root, &path, files)?;
-        } else if path
-            .extension()
-            .map(|extension| extension.eq_ignore_ascii_case("md"))
-            .unwrap_or(false)
-        {
-            let bytes = std::fs::read(&path)?;
-            let content = String::from_utf8(bytes)
-                .or_else(|error| {
-                    let mut bytes = error.into_bytes();
-                    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-                        bytes.drain(0..3);
-                    }
-                    String::from_utf8(bytes)
-                })
-                .unwrap_or_default();
-            let mtime = std::fs::metadata(&path)?
-                .modified()
-                .ok()
-                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|duration| duration.as_secs() as i64)
-                .unwrap_or_default();
-            let relative = path
-                .strip_prefix(root)
-                .map(|path| path.to_string_lossy().replace('\\', "/"))
-                .unwrap_or_default();
-            files.push((relative, content, mtime));
+            collect_document_files(root, &path, files)?;
+            continue;
         }
+        if DocumentKind::of_path(&entry.file_name().to_string_lossy()).is_none() {
+            continue;
+        }
+        let bytes = std::fs::read(&path)?;
+        let content = String::from_utf8(bytes)
+            .or_else(|error| {
+                let mut bytes = error.into_bytes();
+                if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+                    bytes.drain(0..3);
+                }
+                String::from_utf8(bytes)
+            })
+            .unwrap_or_default();
+        let mtime = std::fs::metadata(&path)?
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs() as i64)
+            .unwrap_or_default();
+        let relative = path
+            .strip_prefix(root)
+            .map(|path| path.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default();
+        files.push((relative, content, mtime));
     }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
+
+    use uuid::Uuid;
+
     use super::*;
+
+    /// 隔离的临时 Vault：用 UUID 避开并发测试，离开作用域时清理。
+    struct TestVault(PathBuf);
+
+    impl TestVault {
+        /// 创建唯一的临时目录。
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("quailcard-vaultfs-{}", Uuid::now_v7()));
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+
+        /// 构造已选择此目录的 VaultState。
+        fn state(&self) -> VaultState {
+            let state = VaultState::new();
+            state.set_root(self.0.clone()).unwrap();
+            state
+        }
+
+        /// 写入任意相对路径文件，自动创建父目录。
+        fn write(&self, relative: &str, content: &str) {
+            let path = self.0.join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, content).unwrap();
+        }
+    }
+
+    impl Drop for TestVault {
+        /// 测试结束后尽力删除临时目录。
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[test]
     /// 相对路径净化拒绝目录穿越。
@@ -357,10 +441,128 @@ mod tests {
     }
 
     #[test]
-    /// 文件名净化会移除非法字符并补上后缀。
-    fn sanitizes_titles() {
-        assert_eq!(sanitize_title("我的:笔记").unwrap(), "我的笔记.md");
-        assert_eq!(sanitize_title("已经.md").unwrap(), "已经.md");
-        assert!(sanitize_title("   ").is_err());
+    /// 文件名净化移除非法字符并按类型补扩展名；文件夹名不追加扩展名。
+    fn sanitizes_names_by_kind() {
+        assert_eq!(
+            sanitize_file_name("我的:笔记", DocumentKind::Markdown).unwrap(),
+            "我的笔记.md"
+        );
+        assert_eq!(
+            sanitize_file_name("已经.md", DocumentKind::Markdown).unwrap(),
+            "已经.md"
+        );
+        assert_eq!(
+            sanitize_file_name("单词", DocumentKind::WordGroup).unwrap(),
+            "单词.qword"
+        );
+        assert_eq!(
+            sanitize_file_name("单词.QWORD", DocumentKind::WordGroup).unwrap(),
+            "单词.QWORD"
+        );
+        assert_eq!(sanitize_plain_name("文件夹:名").unwrap(), "文件夹名");
+        assert!(sanitize_plain_name("   ").is_err());
+        assert!(sanitize_file_name("   ", DocumentKind::Markdown).is_err());
+    }
+
+    #[test]
+    /// 扫描同时收集 .md 与 .qword（大小写不敏感），跳过内部目录与其他类型。
+    fn scans_markdown_and_word_groups() {
+        let vault = TestVault::new();
+        vault.write("a.md", "# 笔记");
+        vault.write("目录/b.qword", "{}");
+        vault.write("目录/c.txt", "忽略");
+        vault.write(".quailcard/config.json", "{}");
+        vault.write("d.MD", "# 大写");
+        vault.write("e.QWORD", "{}");
+        let files = vault.state().scan().unwrap();
+        let paths: BTreeSet<String> = files.into_iter().map(|(path, ..)| path).collect();
+        assert_eq!(
+            paths,
+            BTreeSet::from([
+                "a.md".to_string(),
+                "目录/b.qword".to_string(),
+                "d.MD".to_string(),
+                "e.QWORD".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    /// 新建单词组写盘并返回相对路径；重名拒绝，且允许与同名 .md 并存。
+    fn creates_word_group_file() {
+        let vault = TestVault::new();
+        vault.write("单词.md", "# 同名笔记");
+        let state = vault.state();
+        let path = state
+            .create_word_group_file("课程", " 单词 ", "{\"words\":[]}")
+            .unwrap();
+        assert_eq!(path, "课程/单词.qword");
+        assert_eq!(
+            std::fs::read_to_string(vault.0.join(&path)).unwrap(),
+            "{\"words\":[]}"
+        );
+        assert_eq!(
+            state
+                .create_word_group_file("课程", "单词", "{}")
+                .unwrap_err()
+                .code,
+            "VALIDATION_ERROR"
+        );
+        // 与 .md 同名不冲突：扩展名不同。
+        assert!(state.create_word_group_file("", "单词", "{}").is_ok());
+    }
+
+    #[test]
+    /// 新建 Markdown 笔记仍按 .md 补扩展名。
+    fn creates_markdown_note() {
+        let vault = TestVault::new();
+        let state = vault.state();
+        let path = state.create_note("", "我的笔记").unwrap();
+        assert_eq!(path, "我的笔记.md");
+        assert_eq!(
+            std::fs::read_to_string(vault.0.join(&path)).unwrap(),
+            "# 我的笔记\n"
+        );
+    }
+
+    #[test]
+    /// 改名保留旧文件扩展名：.md 仍是 .md，单词组仍是 .qword。
+    fn rename_note_keeps_extension() {
+        let vault = TestVault::new();
+        vault.write("旧笔记.md", "# x");
+        vault.write("旧单词.qword", "{}");
+        std::fs::create_dir_all(vault.0.join("课程")).unwrap();
+        let state = vault.state();
+        assert_eq!(
+            state.rename_note("旧笔记.md", "新笔记").unwrap(),
+            "新笔记.md"
+        );
+        assert_eq!(
+            state.rename_note("旧单词.qword", "课程/新单词").unwrap(),
+            "课程/新单词.qword"
+        );
+        assert!(vault.0.join("新笔记.md").is_file());
+        assert!(vault.0.join("课程/新单词.qword").is_file());
+        assert!(!vault.0.join("旧单词.qword").exists());
+    }
+
+    #[test]
+    /// 文件夹改名不再追加 .md（修复既有缺陷）。
+    fn rename_folder_does_not_append_extension() {
+        let vault = TestVault::new();
+        std::fs::create_dir_all(vault.0.join("旧文件夹")).unwrap();
+        std::fs::create_dir_all(vault.0.join("课程")).unwrap();
+        let state = vault.state();
+        assert_eq!(
+            state.rename_folder("旧文件夹", "新文件夹").unwrap(),
+            "新文件夹"
+        );
+        assert!(vault.0.join("新文件夹").is_dir());
+        assert!(!vault.0.join("新文件夹.md").exists());
+        assert_eq!(
+            state.rename_folder("新文件夹", "课程/英语").unwrap(),
+            "课程/英语"
+        );
+        assert!(vault.0.join("课程/英语").is_dir());
     }
 }

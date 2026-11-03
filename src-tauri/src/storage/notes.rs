@@ -6,7 +6,9 @@
 use std::sync::RwLock;
 
 use super::{frontmatter, helpers, links, notes_summary_sort_key, Storage};
-use crate::{error::CommandError, models::NoteSummary};
+use crate::{
+    error::CommandError, models::NoteSummary, vaultfs::documents::DocumentKind, word_group,
+};
 
 /// 汇总一篇笔记的标签与别名。
 ///
@@ -27,24 +29,66 @@ fn collect_tags(content: &str) -> (Vec<String>, Vec<String>) {
     (tags, meta.aliases)
 }
 
+/// 构造索引条目：Markdown 解析 frontmatter 与双链，单词组只派生搜索文本。
+///
+/// 契约：单词组没有 frontmatter，也不参与双链，标签/别名/链接一律为空；
+/// content 置空以免被误当正文；损坏的单词组不影响列表，只是搜索不到内容。
+fn build_entry(path: &str, content: &str, mtime: i64) -> NoteEntry {
+    let kind = DocumentKind::of_path(path).unwrap_or(DocumentKind::Markdown);
+    let mut entry = NoteEntry {
+        path: path.to_string(),
+        title: helpers::note_title_from_path(path),
+        kind,
+        tags: Vec::new(),
+        aliases: Vec::new(),
+        links: Vec::new(),
+        mtime,
+        content: String::new(),
+        search_text: None,
+    };
+    if kind.is_markdown() {
+        let (tags, aliases) = collect_tags(content);
+        entry.tags = tags;
+        entry.aliases = aliases;
+        entry.links = links::scan_content_links(content);
+        entry.content = content.to_string();
+        return entry;
+    }
+    let search_text = match word_group::parse(content) {
+        Ok(document) => word_group::search_text(&document),
+        Err(error) => {
+            // 损坏的单词组仍然列出（编辑器只读提示），只是搜索不到内容。
+            eprintln!("WORD_GROUP_INDEX_SKIP(detail): {error} path={path}");
+            String::new()
+        }
+    };
+    entry.search_text = Some(search_text);
+    entry
+}
+
 /// 笔记内存索引；条目按（标题, 路径）稳定排序。
 #[derive(Default)]
 pub(crate) struct NoteIndex {
     entries: RwLock<Vec<NoteEntry>>,
 }
 
-/// 单篇笔记的索引条目，content 仅供内存搜索使用。
+/// 单篇文档的索引条目；content 与 search_text 仅供内存搜索使用。
 #[derive(Debug, Clone)]
 pub(crate) struct NoteEntry {
     pub(crate) path: String,
     pub(crate) title: String,
+    /// 文档类型：单词组不解析标签、别名与双链。
+    pub(crate) kind: DocumentKind,
     pub(crate) tags: Vec<String>,
     /// frontmatter 声明的别名：双链解析时与标题同等对待。
     pub(crate) aliases: Vec<String>,
     /// 正文中指向其他笔记的双链（文档 UTF-16 坐标），反链查询与改名改写都用它。
     pub(crate) links: Vec<links::RawLink>,
     pub(crate) mtime: i64,
+    /// Markdown 正文；单词组置空，避免被当作 Markdown 渲染或解析。
     pub(crate) content: String,
+    /// Markdown 为 None（搜索直接用 content）；单词组为派生搜索文本。
+    pub(crate) search_text: Option<String>,
 }
 
 impl NoteIndex {
@@ -52,18 +96,7 @@ impl NoteIndex {
     pub(crate) fn rebuild(&self, files: &[(String, String, i64)]) {
         let mut entries: Vec<NoteEntry> = files
             .iter()
-            .map(|(path, content, mtime)| {
-                let (tags, aliases) = collect_tags(content);
-                NoteEntry {
-                    path: path.clone(),
-                    title: helpers::note_title_from_path(path),
-                    tags,
-                    aliases,
-                    links: links::scan_content_links(content),
-                    mtime: *mtime,
-                    content: content.clone(),
-                }
-            })
+            .map(|(path, content, mtime)| build_entry(path, content, *mtime))
             .collect();
         entries.sort_by(|left, right| {
             notes_summary_sort_key(&left.title, &left.path)
@@ -76,16 +109,7 @@ impl NoteIndex {
 
     /// 单篇笔记保存后新增或替换索引条目，保持排序不变量。
     pub(crate) fn upsert(&self, path: &str, content: &str, mtime: i64) {
-        let (tags, aliases) = collect_tags(content);
-        let entry = NoteEntry {
-            path: path.to_string(),
-            title: helpers::note_title_from_path(path),
-            tags,
-            aliases,
-            links: links::scan_content_links(content),
-            mtime,
-            content: content.to_string(),
-        };
+        let entry = build_entry(path, content, mtime);
         if let Ok(mut guard) = self.entries.write() {
             guard.retain(|existing| existing.path != path);
             guard.push(entry);
@@ -141,7 +165,7 @@ impl NoteIndex {
 }
 
 impl Storage {
-    /// 打开 Vault：记录根目录、加载卡片文件并重建笔记索引。
+    /// 打开 Vault：记录根目录、加载卡片文件、重建笔记索引并对账单词组卡片。
     pub async fn open_vault(
         &self,
         root: &std::path::Path,
@@ -149,10 +173,12 @@ impl Storage {
     ) -> Result<(), CommandError> {
         self.inner.cards.set_root(root)?;
         self.inner.notes.rebuild(files);
+        // 单词组以文件为事实来源：打开/重扫时补齐卡片，无变化不写盘。
+        self.reconcile_word_group_cards(files);
         Ok(())
     }
 
-    /// 重新扫描 Vault：以磁盘为准整体刷新卡片缓存与笔记索引。
+    /// 重新扫描 Vault：以磁盘为准整体刷新卡片缓存、笔记索引与单词组卡片。
     pub async fn rescan_vault(
         &self,
         root: &std::path::Path,
@@ -160,6 +186,7 @@ impl Storage {
     ) -> Result<(), CommandError> {
         self.inner.cards.set_root(root)?;
         self.inner.notes.rebuild(files);
+        self.reconcile_word_group_cards(files);
         Ok(())
     }
 
@@ -236,23 +263,28 @@ impl Storage {
 pub(crate) struct LinkSnapshotEntry {
     pub(crate) path: String,
     pub(crate) title: String,
+    /// 文档类型；快照当前只含 Markdown，字段保留给用例层做防御性过滤。
+    pub(crate) kind: DocumentKind,
     pub(crate) aliases: Vec<String>,
     pub(crate) links: Vec<links::RawLink>,
     pub(crate) content: String,
 }
 
 impl Storage {
-    /// 克隆全部笔记的双链相关快照：链接解析、反链与改名改写都基于它计算。
+    /// 克隆全部 Markdown 笔记的双链相关快照：链接解析、反链与改名改写都基于它计算。
     ///
-    /// 快照与索引同源，不额外持锁；调用方拿到的是拷贝，可在不阻塞索引的前提下遍历。
+    /// 契约：单词组不参与双链，候选集合里绝不能出现 .qword，否则同名标题会
+    /// 抢走 [[链接]] 的解析结果。快照与索引同源，调用方拿到的是拷贝。
     pub(crate) async fn link_snapshot(&self) -> Vec<LinkSnapshotEntry> {
         self.inner
             .notes
             .snapshot()
             .into_iter()
+            .filter(|entry| entry.kind.is_markdown())
             .map(|entry| LinkSnapshotEntry {
                 path: entry.path,
                 title: entry.title,
+                kind: entry.kind,
                 aliases: entry.aliases,
                 links: entry.links,
                 content: entry.content,

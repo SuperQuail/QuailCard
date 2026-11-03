@@ -5,13 +5,9 @@
 
 use std::collections::HashSet;
 
-/// 从文件路径推导笔记标题。
+/// 从文件路径推导笔记标题：去掉 .md/.qword 扩展名，单词组与笔记共用同一规则。
 pub(crate) fn note_title_from_path(path: &str) -> String {
-    path.rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(path)
-        .trim_end_matches(".md")
-        .to_string()
+    crate::vaultfs::documents::title_from_path(path)
 }
 
 /// 行内标签的最大数量：超过后忽略，避免索引条目被长文档拖大。

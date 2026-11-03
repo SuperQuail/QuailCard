@@ -14,14 +14,28 @@ use super::{
     cards::CardState,
     envelope::{self, CorruptPolicy},
 };
-use crate::error::CommandError;
+use crate::{
+    error::CommandError,
+    vaultfs::documents::{MARKDOWN_EXTENSION, WORD_GROUP_EXTENSION},
+};
 
 #[cfg(test)]
 #[path = "card_files_video_tests.rs"]
 mod video_tests;
 
+#[cfg(test)]
+#[path = "card_files_word_group_tests.rs"]
+mod word_group_tests;
+
 /// Vault 内保留的数据目录名，与附件配置共用。
 pub(crate) const CARDS_DIR_NAME: &str = ".quailcard";
+
+/// 单词组卡片在 .quailcard 内的命名空间，与 Markdown 卡片目录树互不重叠。
+///
+/// Markdown 保持 .quailcard/<去 .md>.json；单词组放到
+/// .quailcard/wordgroups/<去 .qword>.json（保留子目录），隔离区因此自动是
+/// .quailcard/.detached/wordgroups/...。
+pub(crate) const WORD_GROUPS_DIR_NAME: &str = "wordgroups";
 
 /// 卡片文件损坏时直接拒开，绝不自动重置（不可再生数据）。
 const CARDS_CORRUPT: CorruptPolicy = CorruptPolicy::Reject {
@@ -114,18 +128,35 @@ fn is_video_internal_file(root: &Path, path: &Path, relative: &str) -> bool {
     !is_card
 }
 
-/// 从镜像文件相对路径推导笔记路径（词.json -> 词.md）。
+/// 从镜像文件相对路径推导笔记路径（词.json -> 词.md，wordgroups/词.json -> 词.qword）。
+///
+/// 前缀回推是隔离区接回与旧文件缺 notePath 时的兜底；正常文件以信封内
+/// 的 notePath 为权威，不受同名目录歧义影响。
 pub(super) fn derive_note_path(relative: &str) -> String {
     let trimmed = relative.trim_end_matches(".json");
+    if let Some(rest) = trimmed.strip_prefix(&format!("{WORD_GROUPS_DIR_NAME}/")) {
+        return format!("{rest}{WORD_GROUP_EXTENSION}");
+    }
     format!("{trimmed}.md")
 }
 
 /// 计算笔记路径对应的镜像卡片文件相对路径。
+///
+/// 单词组写入 wordgroups/ 命名空间，其余文档（Markdown）保持原来的镜像目录树。
 pub(super) fn card_relative_path(note_path: &str) -> Result<PathBuf, CommandError> {
     let sanitized = crate::vaultfs::sanitize_relative(note_path)?;
-    let mut name = sanitized.to_string_lossy().to_string();
-    if name.to_lowercase().ends_with(".md") {
-        name.truncate(name.len() - 3);
+    let name = sanitized.to_string_lossy().to_string();
+    // 小写副本只用于扩展名判定；截断量按 ASCII 扩展名的字节长度计算。
+    let lower = name.to_lowercase();
+    if lower.ends_with(WORD_GROUP_EXTENSION) {
+        let stem = &name[..name.len() - WORD_GROUP_EXTENSION.len()];
+        return Ok(Path::new(CARDS_DIR_NAME)
+            .join(WORD_GROUPS_DIR_NAME)
+            .join(format!("{stem}.json")));
+    }
+    let mut name = name;
+    if lower.ends_with(MARKDOWN_EXTENSION) {
+        name.truncate(name.len() - MARKDOWN_EXTENSION.len());
     }
     name.push_str(".json");
     Ok(Path::new(CARDS_DIR_NAME).join(name))

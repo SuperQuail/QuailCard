@@ -33,8 +33,10 @@ pub(crate) struct PendingRewrite {
 /// 解析规则与编辑器、反链完全一致，避免"界面显示有链接但改名不跟着改"。
 pub(crate) async fn plan(storage: &Storage, old_prefix: &str) -> Vec<PendingRewrite> {
     let snapshot = storage.link_snapshot().await;
+    // 候选只取 Markdown：单词组不参与双链（快照此处再兜底过滤一次）。
     let notes: Vec<ResolveNote<'_>> = snapshot
         .iter()
+        .filter(|entry| entry.kind.is_markdown())
         .map(|entry| ResolveNote {
             path: &entry.path,
             title: &entry.title,
@@ -131,6 +133,7 @@ pub(crate) async fn apply(
     let snapshot = storage.link_snapshot().await;
     let notes: Vec<ResolveNote<'_>> = snapshot
         .iter()
+        .filter(|entry| entry.kind.is_markdown())
         .map(|entry| ResolveNote {
             path: &entry.path,
             title: &entry.title,
