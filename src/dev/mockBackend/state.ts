@@ -1,4 +1,4 @@
-import type { CardSource, ProviderSummary } from "../../domain/types";
+import type { CardSource, PracticeSettings, ProviderSummary } from "../../domain/types";
 import { serializeWordGroup, type WordEntry } from "../../domain/wordGroup";
 
 /**
@@ -53,6 +53,8 @@ export let aiGradingEnabled = false;
 export let permanentDelete = false;
 /** 演示用「改名时更新引用链接」开关：演示环境不复刻改写逻辑，仅回显状态。 */
 export let updateLinksOnRename = true;
+/** 演示用打字背诵偏好：只回显，不做范围校验（范围校验属于后端规则）。 */
+export let practiceSettings: PracticeSettings = { repeatsPerWord: 5, wordsPerPage: 3 };
 /** 演示用历史 Vault 路径，仅用于填充“最近打开”列表。 */
 export const recentVaults: string[] = ["D:\QuailVault", "D:\Documents\MyKnowledge"];
 
@@ -93,6 +95,9 @@ export function setPermanentDelete(value: boolean): void {
 }
 export function setUpdateLinksOnRename(value: boolean): void {
   updateLinksOnRename = value;
+}
+export function setPracticeSettings(value: PracticeSettings): void {
+  practiceSettings = value;
 }
 export function setActiveProviderId(value: string): void {
   mockActiveProviderId = value;

@@ -5,6 +5,7 @@ import * as noteStore from "./stores/noteStore";
 import * as cardStore from "./stores/cardStore";
 import * as reviewStore from "./stores/reviewStore";
 import * as providerStore from "./stores/providerStore";
+import * as typingStore from "./stores/typingStore";
 import { leaveAgentVault } from "./stores/agentStore";
 
 /**
@@ -31,6 +32,7 @@ export async function initialize(): Promise<void> {
     uiStore.fontSize.value = data.fontSize;
     uiStore.permanentDelete.value = data.permanentDelete;
     uiStore.updateLinksOnRename.value = data.updateLinksOnRename;
+    typingStore.applyPracticeSettings(data.practiceSettings);
     vaultStore.vaultStatus.value = status;
     await vaultStore.loadVaultConfig();
     await vaultStore.loadDataLocations();

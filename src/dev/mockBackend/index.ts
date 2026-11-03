@@ -1,4 +1,4 @@
-import type { BootstrapData } from "../../domain/types";
+import type { BootstrapData, PracticeSettings } from "../../domain/types";
 import * as cardsDomain from "./cards";
 import * as attachmentsDomain from "./attachments";
 import * as notesDomain from "./notes";
@@ -14,9 +14,11 @@ import {
   permanentDelete,
   recentVaults,
   updateLinksOnRename,
+  practiceSettings,
   setAiGradingEnabled,
   setFontSize,
   setPermanentDelete,
+  setPracticeSettings,
   setUpdateLinksOnRename,
   setVaultLocked,
   setVaultPath,
@@ -53,6 +55,7 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
         aiGradingEnabled,
         permanentDelete,
         updateLinksOnRename,
+        practiceSettings: { ...practiceSettings },
       };
       return data as T;
     }
@@ -165,6 +168,12 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
     case "set_update_links_on_rename":
       setUpdateLinksOnRename(Boolean(args?.enabled));
       return updateLinksOnRename as T;
+    case "set_practice_settings": {
+      // 演示环境只回显，不做范围校验；范围规则属于后端。
+      const input = args?.input as PracticeSettings;
+      setPracticeSettings({ repeatsPerWord: input.repeatsPerWord, wordsPerPage: input.wordsPerPage });
+      return { ...practiceSettings } as T;
+    }
     case "get_backlinks":
       return notesDomain.backlinks(String(args?.path ?? "")) as T;
     case "list_providers":

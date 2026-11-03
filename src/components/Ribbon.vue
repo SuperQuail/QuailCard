@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bot, Brain, Moon, PanelLeftClose, PanelLeftOpen, PenLine, Play, Search, Settings, Sun } from "@lucide/vue";
+import { Bot, Brain, Keyboard, Moon, PanelLeftClose, PanelLeftOpen, PenLine, Play, Search, Settings, Sun } from "@lucide/vue";
 
 defineProps<{
   treeOpen: boolean;
@@ -8,6 +8,7 @@ defineProps<{
   agentOpen?: boolean;
   reviewOpen?: boolean;
   videoOpen?: boolean;
+  typingOpen?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -15,6 +16,7 @@ const emit = defineEmits<{
   "open-palette": [];
   "open-capture": [];
   "open-review": [];
+  "open-typing": [];
   "toggle-theme": [];
   "open-settings": [];
   "open-agent": [];
@@ -45,6 +47,10 @@ const emit = defineEmits<{
 
     <button type="button" class="icon-btn" :class="{ active: videoOpen }" title="视频转笔记" aria-label="打开视频转笔记" :aria-pressed="videoOpen" @click="emit('open-video')">
       <Play :size="17" :stroke-width="1.8" />
+    </button>
+
+    <button type="button" class="icon-btn" :class="{ active: typingOpen }" title="打字背诵" aria-label="打开打字背诵" :aria-pressed="typingOpen" @click="emit('open-typing')">
+      <Keyboard :size="17" :stroke-width="1.8" />
     </button>
 
     <button type="button" class="icon-btn relative" :class="{ active: reviewOpen }" title="复习工作区" aria-label="打开复习工作区" :aria-pressed="reviewOpen" @click="emit('open-review')">

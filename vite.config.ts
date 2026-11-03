@@ -19,6 +19,8 @@ export default defineConfig(async () => ({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts"],
+    // jsdom 缺少 Range 几何实现，CodeMirror 的异步测量会在这里抛错；统一补丁见该文件。
+    setupFiles: ["src/test-setup.ts"],
     // Node 24 下 threads 在多测试文件退出阶段可能挂起，单进程 forks 可稳定回收 jsdom。
     pool: "forks",
     fileParallelism: false,

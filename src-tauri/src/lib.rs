@@ -165,6 +165,7 @@ pub fn run() {
             commands::set_font_size,
             commands::get_study_stats,
             commands::set_ai_grading_enabled,
+            commands::set_practice_settings,
             commands::set_permanent_delete,
             commands::set_update_links_on_rename,
             commands::set_active_provider,

@@ -1,4 +1,4 @@
-import { Bot, Brain, Moon, PanelLeftClose, PanelLeftOpen, PenLine, Play, Search, Settings, Sun } from "@lucide/vue";
+import { Bot, Brain, Keyboard, Moon, PanelLeftClose, PanelLeftOpen, PenLine, Play, Search, Settings, Sun } from "@lucide/vue";
 import { mount } from "@vue/test-utils";
 import { afterEach, describe, expect, test } from "vitest";
 import Ribbon from "./Ribbon.vue";
@@ -28,6 +28,7 @@ describe("Ribbon 导航布局", () => {
       ["快速捕获（Ctrl+N）", "open-capture", PenLine],
       ["学习 Agent", "open-agent", Bot],
       ["视频转笔记", "open-video", Play],
+      ["打字背诵", "open-typing", Keyboard],
       ["复习工作区", "open-review", Brain],
       ["切换主题", "toggle-theme", Moon],
       ["设置", "open-settings", Settings],
@@ -50,13 +51,13 @@ describe("Ribbon 导航布局", () => {
   test("保留展开主题切换图标、导航选中态和复习数量", async () => {
     const wrapper = mountRibbon();
     expect(wrapper.get('button[title="复习工作区"] span').text()).toBe("4");
-    await wrapper.setProps({ treeOpen: false, dark: true, dueCount: 0, agentOpen: true, reviewOpen: true, videoOpen: true });
+    await wrapper.setProps({ treeOpen: false, dark: true, dueCount: 0, agentOpen: true, reviewOpen: true, videoOpen: true, typingOpen: true });
     expect(wrapper.findComponent(PanelLeftOpen).exists()).toBe(true);
     expect(wrapper.findComponent(PanelLeftClose).exists()).toBe(false);
     expect(wrapper.findComponent(Sun).exists()).toBe(true);
     expect(wrapper.findComponent(Moon).exists()).toBe(false);
     expect(wrapper.find('button[title="复习工作区"] span').exists()).toBe(false);
-    for (const title of ["学习 Agent", "视频转笔记", "复习工作区"]) {
+    for (const title of ["学习 Agent", "视频转笔记", "打字背诵", "复习工作区"]) {
       const button = wrapper.get('button[title="' + title + '"]');
       expect(button.classes()).toContain("active");
       expect(button.attributes("aria-pressed")).toBe("true");
