@@ -71,9 +71,13 @@ fn card_and_note_paths_roundtrip() {
 }
 
 #[test]
-/// 非法路径（目录穿越）在计算卡片路径前就被拒绝。
+/// 非法路径（目录穿越、绝对路径）在计算卡片路径前就被拒绝。
 fn rejects_unsafe_note_paths() {
     assert!(card_relative_path("../逃逸.md").is_err());
+    // 根开头的路径在 Windows 与 Unix 上都是绝对路径。
+    assert!(card_relative_path("/逃逸.md").is_err());
+    // 盘符只有 Windows 认得；在 Unix 上 "C:/逃逸.md" 只是名字里带冒号的普通文件。
+    #[cfg(windows)]
     assert!(card_relative_path("C:/逃逸.md").is_err());
 }
 
