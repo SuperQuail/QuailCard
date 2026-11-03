@@ -1,5 +1,17 @@
 # Changelog
 
+<!-- qegg:release 0.6.0 -->
+## v0.6.0 - 2026-11-03
+
+### Features
+
+- [`a6ed3bf`](https://github.com/SuperQuail/QuailCard/commit/a6ed3bf02d3491ba7001108c6fe2f2245df3c666): 看中文释义逐字母打出英文单词，每个单词重复多遍后进入模糊释义与已完成记录的记忆遍；带连击、手动翻页与自动朗读，练习成绩只做本次统计，不写入复习调度。
+- [`2cc4d66`](https://github.com/SuperQuail/QuailCard/commit/2cc4d6606c06586b812c74e4e43750e8076157e8): 打字背诵兼容单词组：单词组编辑区可直接开始练习，范围按「本组 / 全部单词」展示；开始前先落盘并重载卡片，单词组保存后卡片变化会重建词池，避免练到已改或已删的单词。 ([#2](https://github.com/SuperQuail/QuailCard/pull/2) by @Wsrsq)
+- [`2cc4d66`](https://github.com/SuperQuail/QuailCard/commit/2cc4d6606c06586b812c74e4e43750e8076157e8): 新增单词组（`.qword`）文件：右键即可创建，按页编写单词并在保存时自动生成单词卡片，音标可根据单词自动查询。 ([#2](https://github.com/SuperQuail/QuailCard/pull/2) by @Wsrsq)
+
+**Full Changelog**: https://github.com/SuperQuail/QuailCard/compare/app-v0.5.0...app-v0.6.0
+<!-- qegg:release:end -->
+
 <!-- qegg:release 0.5.0 -->
 ## v0.5.0 - 2026-10-31
 
