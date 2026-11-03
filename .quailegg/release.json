@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "version": "0.5.0",
-  "created_at": "2026-10-31T03:04:32.049079913Z",
+  "version": "0.6.0",
+  "created_at": "2026-11-03T06:29:08.458645026Z",
   "mode": "pr",
-  "fingerprint": "sha256:afbbe4f695dedfd1b121e0bac595fbe0302ef984475bca1d0cb8eab377c8d6d7",
+  "fingerprint": "sha256:270c289dc86b9b652df467f56ca20e56e7534e62ea3a6bc0007b95063f781036",
   "repo": {
     "host": "github.com",
     "owner": "SuperQuail",
@@ -17,25 +17,25 @@
       "cargo test --manifest-path src-tauri/Cargo.toml"
     ],
     "skipped": false,
-    "at": "2026-10-31T03:04:32.049080464Z"
+    "at": "2026-11-03T06:29:08.458645767Z"
   },
   "packages": [
     {
       "name": "quailcard",
       "path": "src-tauri",
       "resolver": "rust",
-      "current": "0.4.0",
-      "next": "0.5.0",
+      "current": "0.5.0",
+      "next": "0.6.0",
       "bump": "minor",
-      "tag": "app-v0.5.0",
+      "tag": "app-v0.6.0",
       "publish": false
     }
   ],
   "releases": [
     {
-      "version": "0.5.0",
-      "tag": "app-v0.5.0",
-      "previous_tag": "app-v0.4.0",
+      "version": "0.6.0",
+      "tag": "app-v0.6.0",
+      "previous_tag": "app-v0.5.0",
       "packages": [
         "quailcard"
       ]
@@ -43,56 +43,50 @@
   ],
   "changes": [
     {
-      "file": ".changes/frontmatter-tags.md",
+      "file": ".changes/typing-practice.md",
       "type": "feat",
-      "scope": "notes",
+      "scope": "typing",
       "bump": "minor",
       "packages": [
         "quailcard"
       ],
-      "body": "右侧栏新增标签与大纲，frontmatter 只读展示。",
-      "commit": "833baef63be8faa9ad0027a369d3b5d83188c569",
-      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/833baef63be8faa9ad0027a369d3b5d83188c569",
+      "body": "看中文释义逐字母打出英文单词，每个单词重复多遍后进入模糊释义与已完成记录的记忆遍；带连击、手动翻页与自动朗读，练习成绩只做本次统计，不写入复习调度。",
+      "commit": "a6ed3bf02d3491ba7001108c6fe2f2245df3c666",
+      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/a6ed3bf02d3491ba7001108c6fe2f2245df3c666",
       "author": "Wsrsq"
     },
     {
-      "file": ".changes/image-actions.md",
+      "file": ".changes/typing-word-group.md",
       "type": "feat",
-      "scope": "attachments",
+      "scope": "typing",
       "bump": "minor",
       "packages": [
         "quailcard"
       ],
-      "body": "图片支持右键复制、另存为与定位到文件夹。",
-      "commit": "c261927d94bf59a113443b20f5c35b09c4032608",
-      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/c261927d94bf59a113443b20f5c35b09c4032608",
+      "body": "打字背诵兼容单词组：单词组编辑区可直接开始练习，范围按「本组 / 全部单词」展示；开始前先落盘并重载卡片，单词组保存后卡片变化会重建词池，避免练到已改或已删的单词。",
+      "commit": "2cc4d6606c06586b812c74e4e43750e8076157e8",
+      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/2cc4d6606c06586b812c74e4e43750e8076157e8",
+      "pull_number": 2,
+      "pull_url": "https://github.com/SuperQuail/QuailCard/pull/2",
       "author": "Wsrsq"
     },
     {
-      "file": ".changes/note-links.md",
+      "file": ".changes/word-group.md",
       "type": "feat",
-      "scope": "links",
+      "scope": "wordgroup",
       "bump": "minor",
       "packages": [
         "quailcard"
       ],
-      "body": "支持 [[双链]] 与反链面板，改名时自动同步引用。",
-      "commit": "6089536d9057a9767900837041220b801201db2e",
-      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/6089536d9057a9767900837041220b801201db2e",
-      "author": "Wsrsq"
-    },
-    {
-      "file": ".changes/trash-delete.md",
-      "type": "feat",
-      "scope": "vault",
-      "bump": "minor",
-      "packages": [
-        "quailcard"
-      ],
-      "body": "删除走系统回收站，还原后卡片与复习记录自动接回。",
-      "commit": "d7b332bb051d102bb26fccdfd365cca53b3a67d6",
-      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/d7b332bb051d102bb26fccdfd365cca53b3a67d6",
+      "body": "新增单词组（`.qword`）文件：右键即可创建，按页编写单词并在保存时自动生成单词卡片，音标可根据单词自动查询。",
+      "commit": "2cc4d6606c06586b812c74e4e43750e8076157e8",
+      "commit_url": "https://github.com/SuperQuail/QuailCard/commit/2cc4d6606c06586b812c74e4e43750e8076157e8",
+      "pull_number": 2,
+      "pull_url": "https://github.com/SuperQuail/QuailCard/pull/2",
       "author": "Wsrsq"
     }
-  ]
+  ],
+  "qegg": {
+    "version": "0.12.0"
+  }
 }
