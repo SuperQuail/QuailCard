@@ -114,20 +114,33 @@ const { reviewSession, startReviewFromNote, startTodayReview } = useReviewSessio
 const { typingSession, startTypingFromNote, startTypingAll } = useTypingSessionFlow({ showToast });
 
 /**
- * 进入复习前先落盘当前草稿并重载卡片。
- * 单词组卡片只在保存时物化，直接 startReview 会漏掉刚填好的页。
+ * 进入复习或打字前先落盘当前草稿并重载卡片。
+ * 单词组卡片只在保存时物化，不同步就会漏掉刚填好的页。
  */
-async function startReviewCurrent(): Promise<void> {
-  if (activeNotePath.value) {
-    try {
-      await notePersistence.flush(activeNotePath.value);
-      await reloadActiveCards();
-    } catch (error) {
-      showToast(resolveError(error));
-      return;
-    }
+async function flushDocumentCards(): Promise<boolean> {
+  if (!activeNotePath.value) return true;
+  try {
+    await notePersistence.flush(activeNotePath.value);
+    await reloadActiveCards();
+    return true;
+  } catch (error) {
+    showToast(resolveError(error));
+    return false;
   }
-  startReviewFromNote();
+}
+
+/** 进入复习：落盘失败只提示，不带着旧卡片开始。 */
+async function startReviewCurrent(): Promise<void> {
+  if (await flushDocumentCards()) {
+    startReviewFromNote();
+  }
+}
+
+/** 进入打字背诵：与复习同一套前置，词池才包含刚保存的单词。 */
+async function startTypingCurrent(): Promise<void> {
+  if (await flushDocumentCards()) {
+    startTypingFromNote();
+  }
 }
 /** 打开视频转笔记：收起其他工作区后再加载设置与组件状态。 */
 async function openVideo(): Promise<void> {
@@ -408,6 +421,7 @@ watch(() => theme.value, applyTheme);
           :read-only="noteOperationBusy"
           @save-content="updateNoteDraft"
           @start-review="() => void startReviewCurrent()"
+          @start-typing="() => void startTypingCurrent()"
         />
         <EditorPane
           v-else-if="activeNote"
@@ -459,7 +473,7 @@ watch(() => theme.value, applyTheme);
             @add-card="openCardEditor(activeNoteCards[0]?.kind ?? 'qa')"
             @open-ai-split="openAiSplit"
             @start-review="() => void startReviewCurrent()"
-            @start-typing="startTypingFromNote"
+            @start-typing="() => void startTypingCurrent()"
             @collapse="panelOpen = false"
             @jump="jumpToHeading"
             @open-backlink="(path, line) => void openBacklink(path, line)"

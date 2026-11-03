@@ -18,6 +18,8 @@ const props = defineProps<{
   canSwitchScope: boolean;
   audioReady: boolean;
   audioProgress: TypingAudioProgress;
+  /** 「当前笔记」那种范围的叫法：单词组是「本组」，Markdown 笔记是「本笔记」。 */
+  noteLabel?: string;
 }>();
 
 const emit = defineEmits<{
@@ -60,7 +62,7 @@ function step(field: "repeatsPerWord" | "wordsPerPage", delta: number): void {
           class="h-7 flex-1 rounded-md text-[12px] transition"
           :class="scope === 'note' ? 'bg-bg-paper font-medium shadow-sm' : 'text-ink-3'"
           @click="emit('scope', 'note')"
-        >本笔记</button>
+        >{{ noteLabel ?? "本笔记" }}</button>
         <button
           type="button"
           class="h-7 flex-1 rounded-md text-[12px] transition"

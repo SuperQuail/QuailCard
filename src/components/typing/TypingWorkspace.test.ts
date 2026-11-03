@@ -169,6 +169,22 @@ describe("打字背诵工作区", () => {
     expect(wrapper.text()).toContain("切换到全部单词卡");
   });
 
+  test("单词组来源用「本组」的叫法，词池来自本组卡片", async () => {
+    wrapper = mount(TypingWorkspace, { props: { title: "打字背诵", notePath: "英语/核心词.qword", scope: "note" } });
+    await flushPromises();
+    expect(backend.getReviewQueue).toHaveBeenCalledWith("英语/核心词.qword", true);
+    expect(wrapper.text()).toContain("本组");
+    expect(wrapper.text()).not.toContain("本笔记");
+  });
+
+  test("单词组还没有卡片时按「组」提示空态", async () => {
+    vi.mocked(backend.getReviewQueue).mockResolvedValue([]);
+    wrapper = mount(TypingWorkspace, { props: { title: "打字背诵", notePath: "英语/核心词.qword", scope: "note" } });
+    await flushPromises();
+    expect(wrapper.text()).toContain("这个单词组还没有已保存的单词");
+    expect(wrapper.text()).toContain("切换到全部单词");
+  });
+
   test("发音预取完成前开始按钮锁定，完成后解锁", async () => {
     const releases: Array<(value: string) => void> = [];
     vi.mocked(backend.synthesizeSpeech).mockImplementation(() => new Promise<string>((resolve) => { releases.push(resolve); }));

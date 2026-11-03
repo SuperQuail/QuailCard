@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Brain, Plus, Trash2 } from "@lucide/vue";
+import { Brain, Keyboard, Plus, Trash2 } from "@lucide/vue";
 import NoteTabs from "../NoteTabs.vue";
 import NoteToolbar from "../NoteToolbar.vue";
 import WordGroupPager from "./WordGroupPager.vue";
@@ -42,6 +42,7 @@ const emit = defineEmits<{
   "toggle-panel": [];
   "save-content": [notePath: string, content: string];
   "start-review": [];
+  "start-typing": [];
 }>();
 
 const pages = ref<WordEntry[]>([]);
@@ -199,6 +200,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleKeydown));
               @click="deletePage"
             >
               <Trash2 :size="13" />删除本页
+            </button>
+            <button
+              type="button"
+              class="ghost-btn justify-center border border-hairline"
+              title="看中文打英文，逐字判定并记忆巩固"
+              :disabled="pageCount === 0"
+              @click="emit('start-typing')"
+            >
+              <Keyboard :size="13" />打字背诵
             </button>
             <button type="button" class="primary-btn" :disabled="pageCount === 0" @click="emit('start-review')">
               <Brain :size="14" />复习本组

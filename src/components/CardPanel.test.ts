@@ -49,6 +49,16 @@ describe("单词组卡片区", () => {
     wrapper.unmount();
   });
 
+  test("单词组仍可进入打字背诵：单词来自本组卡片", async () => {
+    const wrapper = mount(CardPanel, { props: { cards: [card()], activeCardId: null, wordGroup: true } });
+    const typing = wrapper.findAll("button").find((item) => item.text().includes("打字背诵单词"));
+    expect(typing).toBeTruthy();
+    expect((typing?.element as HTMLButtonElement).disabled).toBe(false);
+    await typing?.trigger("click");
+    expect(wrapper.emitted("start-typing")).toEqual([[]]);
+    wrapper.unmount();
+  });
+
   test("Markdown 笔记保持原有卡片操作", async () => {
     const wrapper = mount(CardPanel, { props: { cards: [card({ notePath: "英语/笔记.md" })], activeCardId: null } });
     expect(wrapper.text()).toContain("卡片 1");

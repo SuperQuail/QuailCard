@@ -143,6 +143,18 @@ describe("单词组分页编辑", () => {
     await wrapper.findAll("button").find((button) => button.text().includes("复习本组"))!.trigger("click");
     expect(wrapper.emitted("start-review")).toHaveLength(1);
   });
+
+  test("打字背诵上抛独立事件，空组时按钮禁用", async () => {
+    const wrapper = mountEditor(contentOf([{ word: "alpha", meaning: "甲" }]));
+    const typing = wrapper.findAll("button").find((button) => button.text().includes("打字背诵"))!;
+    expect(typing.attributes("disabled")).toBeUndefined();
+    await typing.trigger("click");
+    expect(wrapper.emitted("start-typing")).toHaveLength(1);
+
+    const empty = mountEditor(contentOf([]));
+    const disabled = empty.findAll("button").find((button) => button.text().includes("打字背诵"))!;
+    expect(disabled.attributes("disabled")).toBeDefined();
+  });
 });
 
 /** 等待新增页触发的 nextTick 与 focus 链路完成。 */
