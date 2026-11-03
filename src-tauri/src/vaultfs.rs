@@ -223,17 +223,20 @@ pub(crate) fn sanitize_relative(relative: &str) -> Result<PathBuf, CommandError>
     Ok(path.to_path_buf())
 }
 
-/// 纯字符串净化：Agent 只操作普通 Markdown，隐藏目录与内部数据目录不可见。
+/// 纯字符串净化：Agent 只操作受支持的文档（Markdown 笔记与单词组）。
 ///
-/// 与 `agent_note_path` 共用同一规则，写入范围校验与真实文件访问不会出现两套标准。
-pub(crate) fn sanitize_agent_note(relative: &str) -> Result<String, CommandError> {
+/// 与 `agent_document_path` 共用同一规则，写入范围校验与真实文件访问不会出现
+/// 两套标准；扩展名判定统一走 [crate::vaultfs::documents::DocumentKind]。
+pub(crate) fn sanitize_agent_document(relative: &str) -> Result<String, CommandError> {
     if relative.trim() != relative
-        || !relative.to_ascii_lowercase().ends_with(".md")
+        || crate::vaultfs::documents::DocumentKind::of_path(relative).is_none()
         || relative
             .split(['/', '\\'])
             .any(|part| part.starts_with('.'))
     {
-        return Err(CommandError::validation("Agent 只能操作普通 Markdown 笔记"));
+        return Err(CommandError::validation(
+            "Agent 只能操作 Markdown 笔记或单词组",
+        ));
     }
     let path = sanitize_relative(relative)?;
     Ok(path.to_string_lossy().replace('\\', "/"))

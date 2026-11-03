@@ -156,6 +156,7 @@ async fn run_model(
             video: &FakeVideo,
             dictionary: &FakeDictionary,
             cards: &cards,
+            word_groups: &TEST_WORD_GROUPS,
         },
         session,
         input,

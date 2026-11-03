@@ -37,7 +37,7 @@ impl AgentFiles {
                 }
             }
             ScopeEntry::File(note) => {
-                if self.vault.agent_note_path(note)?.is_file() {
+                if self.vault.agent_document_path(note)?.is_file() {
                     Ok(())
                 } else {
                     Err(missing())
@@ -51,6 +51,6 @@ impl AgentFiles {
 fn missing() -> CommandError {
     CommandError::new(
         "AGENT_WRITE_SCOPE_DENIED",
-        "写入授权路径不存在：目录前缀必须指向已存在的文件夹，精确路径必须指向已存在的 Markdown 笔记",
+        "写入授权路径不存在：目录前缀必须指向已存在的文件夹，精确路径必须指向已存在的 Markdown 笔记或单词组",
     )
 }

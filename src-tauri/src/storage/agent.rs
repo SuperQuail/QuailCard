@@ -192,7 +192,7 @@ impl AgentFiles {
 impl AgentRepository for AgentFiles {
     /// 大文件拒绝整篇加载，避免内存与模型上下文无限膨胀。
     fn read(&self, path: &str) -> Result<Value, CommandError> {
-        let absolute = self.vault.agent_note_path(path)?;
+        let absolute = self.vault.agent_document_path(path)?;
         if std::fs::metadata(&absolute)?.len() > 256 * 1024 {
             return Err(CommandError::validation(
                 "笔记超过 256 KiB，请先拆分后交给 Agent",
@@ -224,15 +224,29 @@ impl AgentRepository for AgentFiles {
         };
         for (path, content, _) in candidates {
             if (!scope.is_empty() && !scope.contains(&path))
-                || self.vault.agent_note_path(&path).is_err()
+                || self.vault.agent_document_path(&path).is_err()
             {
                 continue;
             }
+            // 单词组是 JSON：检索与片段都基于派生文本，不把结构字符塞给模型；
+            // 解析失败只记日志跳过，绝不能因为一个坏文件让整次搜索失败。
+            let text = match crate::vaultfs::documents::DocumentKind::of_path(&path) {
+                Some(crate::vaultfs::documents::DocumentKind::WordGroup) => {
+                    match crate::word_group::parse(&content) {
+                        Ok(document) => crate::word_group::search_text(&document),
+                        Err(error) => {
+                            eprintln!("AGENT_SEARCH_SKIP_WORD_GROUP(detail): {error} path={path}");
+                            continue;
+                        }
+                    }
+                }
+                _ => content,
+            };
             if query.is_empty()
                 || path.to_lowercase().contains(&query)
-                || content.to_lowercase().contains(&query)
+                || text.to_lowercase().contains(&query)
             {
-                let snippet = content
+                let snippet = text
                     .lines()
                     .find(|line| line.to_lowercase().contains(&query))
                     .unwrap_or("")

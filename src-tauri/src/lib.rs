@@ -11,6 +11,7 @@ mod agent_models;
 mod agent_observation;
 mod agent_public_history;
 mod agent_video;
+mod agent_word_groups;
 mod agent_writes;
 mod ai;
 #[cfg(test)]

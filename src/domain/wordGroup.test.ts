@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createEntry,
   createEntryId,
+  diffWordGroups,
   isEntryComplete,
   normalizePhonetic,
   parseWordGroup,
@@ -113,5 +114,42 @@ describe("音标归一化", () => {
     expect(normalizePhonetic("/i'fem")).toBe("/iˈfem/");
     expect(normalizePhonetic("")).toBe("");
     expect(normalizePhonetic("   ")).toBe("");
+  });
+});
+
+describe("单词组改动对比", () => {
+  /** 构造一份可解析的单词组文本。 */
+  function documentOf(words: WordEntry[]): string {
+    return serializeWordGroup({ formatVersion: WORD_GROUP_FORMAT_VERSION, words });
+  }
+
+  test("新增、修改与删除都能按页给出，行序变化不算改动", () => {
+    const before = documentOf([entry(), entry({ id: "page-2", word: "frugal", meaning: "节俭的", phonetic: "", example: "" })]);
+    const after = documentOf([
+      entry({ id: "page-2", word: "frugal", meaning: "节俭的（补充）", phonetic: "", example: "" }),
+      entry({ id: "page-3", word: "resilient", phonetic: "/rɪˈzɪliənt/", meaning: "有韧性的", example: "" }),
+    ]);
+    const changes = diffWordGroups(before, after);
+    expect(changes).not.toBeNull();
+    expect(changes?.map((page) => [page.kind, page.word])).toEqual([
+      ["changed", "frugal"],
+      ["removed", "ephemeral"],
+      ["added", "resilient"],
+    ]);
+    expect(changes?.[0].before?.meaning).toBe("节俭的");
+    expect(changes?.[0].after?.meaning).toBe("节俭的（补充）");
+  });
+
+  test("新建单词组按全部新增处理，删除文件无法解析时返回 null", () => {
+    const changes = diffWordGroups(null, documentOf([entry()]));
+    expect(changes).toEqual([{ kind: "added", word: "ephemeral", after: entry() }]);
+    expect(diffWordGroups("{坏掉的", documentOf([entry()]))).toBeNull();
+    expect(diffWordGroups(documentOf([entry()]), "not json")).toBeNull();
+  });
+
+  test("只改页 id 不算改动，字段没变就不进差异", () => {
+    const before = documentOf([entry()]);
+    const after = documentOf([entry({ id: "page-9" })]);
+    expect(diffWordGroups(before, after)).toEqual([]);
   });
 });

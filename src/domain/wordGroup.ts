@@ -152,6 +152,72 @@ export function serializeWordGroup(document: WordGroupDocument): string {
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
+/** 一页的改动类型：新增、删除或字段变化。 */
+export interface WordGroupPageChange {
+  kind: "added" | "removed" | "changed";
+  /** 展示用单词：删除的页取旧值，其余取新值。 */
+  word: string;
+  before?: WordEntry;
+  after?: WordEntry;
+}
+
+/** 两页内容是否等价：id 不参与比较，agent 重写页 id 不算改动。 */
+function samePage(left: WordEntry, right: WordEntry): boolean {
+  return (
+    left.word.trim() === right.word.trim()
+    && left.phonetic.trim() === right.phonetic.trim()
+    && left.meaning.trim() === right.meaning.trim()
+    && left.example.trim() === right.example.trim()
+  );
+}
+
+/** 按单词找未匹配的旧页：agent 改写可能换行序，但单词是用户可辨认的身份。 */
+function matchPage(previous: WordEntry[], used: Set<number>, page: WordEntry): number {
+  const byId = previous.findIndex((item, index) => !used.has(index) && item.id === page.id);
+  if (byId >= 0) return byId;
+  const key = page.word.trim().toLowerCase();
+  if (!key) return -1;
+  return previous.findIndex((item, index) => !used.has(index) && item.word.trim().toLowerCase() === key);
+}
+
+/**
+ * 比较两份单词组文本，给出页级改动列表；任一侧解析失败返回 null。
+ *
+ * 契约：调用方（差异面板）据此渲染结构化列表，解析失败就回退到文本 diff；
+ * 这里只做展示用比较，不修改任何数据，也不依赖后端字段上限规则。
+ */
+export function diffWordGroups(before: string | null, after: string): WordGroupPageChange[] | null {
+  const next = parseWordGroup(after);
+  if (!next.ok) return null;
+  const previous: WordEntry[] = [];
+  if (before !== null) {
+    const parsed = parseWordGroup(before);
+    if (!parsed.ok) return null;
+    previous.push(...parsed.document.words);
+  }
+  const changes: WordGroupPageChange[] = [];
+  const used = new Set<number>();
+  const added: WordEntry[] = [];
+  for (const page of next.document.words) {
+    const index = matchPage(previous, used, page);
+    if (index < 0) {
+      added.push(page);
+      continue;
+    }
+    used.add(index);
+    if (!samePage(previous[index], page)) {
+      changes.push({ kind: "changed", word: page.word, before: previous[index], after: page });
+    }
+  }
+  previous.forEach((page, index) => {
+    if (!used.has(index)) {
+      changes.push({ kind: "removed", word: page.word, before: page });
+    }
+  });
+  changes.push(...added.map((page) => ({ kind: "added" as const, word: page.word, after: page })));
+  return changes;
+}
+
 /** 音标定界符对：只接受成对的 /…/ 或 […]，其它只补不删。 */
 const PHONETIC_DELIMITERS: ReadonlyArray<readonly [string, string]> = [["/", "/"], ["[", "]"]];
 

@@ -29,7 +29,7 @@ impl<'a> WriteAuthority<'a> {
         let allowed = match self {
             Self::Root => true,
             Self::Scoped(scope) => {
-                is_note(path) && scope.iter().any(|entry| covers_dir(entry, path))
+                is_document(path) && scope.iter().any(|entry| covers_dir(entry, path))
             }
         };
         if allowed {
@@ -44,7 +44,7 @@ impl<'a> WriteAuthority<'a> {
         let allowed = match self {
             Self::Root => true,
             Self::Scoped(scope) => {
-                is_note(path) && scope.iter().any(|entry| covers_path(entry, path))
+                is_document(path) && scope.iter().any(|entry| covers_path(entry, path))
             }
         };
         if allowed {
@@ -183,15 +183,15 @@ fn parse_entry(raw: &str) -> Result<ScopeEntry, CommandError> {
         }
         return Ok(ScopeEntry::Dir(crate::vaultfs::sanitize_agent_dir(prefix)?));
     }
-    Ok(ScopeEntry::File(crate::vaultfs::sanitize_agent_note(
+    Ok(ScopeEntry::File(crate::vaultfs::sanitize_agent_document(
         trimmed,
     )?))
 }
 
-/// 只有笔记文件（`.md`）属于写入授权语义：目录授权不包含同目录下的其他文件，
-/// 与 vaultfs::sanitize_agent_note 的契约保持一致。
-fn is_note(path: &str) -> bool {
-    path.len() > 3 && path.to_ascii_lowercase().ends_with(".md")
+/// 只有受支持的文档（Markdown / 单词组）属于写入授权语义：目录授权不包含同目录下的
+/// 其他文件，与 vaultfs::sanitize_agent_document 的契约保持一致。
+fn is_document(path: &str) -> bool {
+    crate::vaultfs::documents::DocumentKind::of_path(path).is_some()
 }
 
 /// 路径分段；空段与多余分隔符不影响比较，别名写法不能绕过覆盖判断。

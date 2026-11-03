@@ -67,6 +67,7 @@ impl ChildExecutor for Executor {
                 owner: format!("agent:{}", session.id),
             };
             let cards = crate::agent_cards::CardsAdapter { app: app.clone() };
+            let word_groups = crate::agent_word_groups::WordGroupsAdapter { app: app.clone() };
             agent::execute_with(
                 AgentPorts {
                     model: &model,
@@ -75,6 +76,7 @@ impl ChildExecutor for Executor {
                     video: &video,
                     dictionary: &*dictionary,
                     cards: &cards,
+                    word_groups: &word_groups,
                 },
                 &mut session,
                 &input,
@@ -139,6 +141,7 @@ pub(crate) async fn execute_root(
         owner: format!("agent:{}", session.id),
     };
     let cards = crate::agent_cards::CardsAdapter { app: app.clone() };
+    let word_groups = crate::agent_word_groups::WordGroupsAdapter { app: app.clone() };
     let result = std::panic::AssertUnwindSafe(agent::execute_with(
         AgentPorts {
             model: &*model,
@@ -147,6 +150,7 @@ pub(crate) async fn execute_root(
             video: &video,
             dictionary: &*dictionary,
             cards: &cards,
+            word_groups: &word_groups,
         },
         session,
         input,

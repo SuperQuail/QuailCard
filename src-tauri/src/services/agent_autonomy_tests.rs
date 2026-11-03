@@ -98,6 +98,7 @@ async fn run_script(
                 video: &FakeVideo,
                 dictionary: &FakeDictionary,
                 cards: &cards,
+                word_groups: &TEST_WORD_GROUPS,
             },
             session,
             &input,

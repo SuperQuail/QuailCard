@@ -129,6 +129,65 @@ pub(crate) fn initial_document() -> WordGroupDocument {
     }
 }
 
+/// Agent 提交的一页字段：没有 id，id 由后端生成或按单词沿用旧值。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct WordGroupEntry {
+    pub(crate) word: String,
+    pub(crate) phonetic: String,
+    pub(crate) meaning: String,
+    pub(crate) example: String,
+}
+
+/// 生成新的页面 id：uuid v7 满足 id 字符集与唯一性要求。
+pub(crate) fn new_id() -> String {
+    uuid::Uuid::now_v7().to_string()
+}
+
+/// 由提交的字段构造文档；已有文档时按单词沿用旧 id，保住对应卡片的复习历史。
+///
+/// 契约：单词 trim + 小写后相等才视为同一页，且同一个旧 id 只沿用一次；匹配不到
+/// 的页生成新 id。新列表里消失的旧页由调用方负责把卡片一起删除——这里不碰存储。
+pub(crate) fn build_document(
+    existing: Option<&WordGroupDocument>,
+    entries: &[WordGroupEntry],
+) -> Result<WordGroupDocument, CommandError> {
+    let mut reused: HashSet<String> = HashSet::with_capacity(entries.len());
+    let mut pages = Vec::with_capacity(entries.len());
+    for (index, entry) in entries.iter().enumerate() {
+        let word = entry.word.trim().to_string();
+        if word.is_empty() {
+            return Err(page_error(index, "缺少单词"));
+        }
+        let id = existing
+            .and_then(|document| match_id(document, &word, &reused))
+            .unwrap_or_else(new_id);
+        reused.insert(id.clone());
+        pages.push(WordPage {
+            id,
+            word,
+            phonetic: entry.phonetic.trim().to_string(),
+            meaning: entry.meaning.trim().to_string(),
+            example: entry.example.trim().to_string(),
+        });
+    }
+    let document = WordGroupDocument {
+        format_version: FORMAT_VERSION,
+        words: pages,
+    };
+    validate(&document)?;
+    Ok(document)
+}
+
+/// 按单词找可沿用的旧页 id；已用过的 id 不再重复匹配，避免两页抢同一张卡片。
+fn match_id(document: &WordGroupDocument, word: &str, reused: &HashSet<String>) -> Option<String> {
+    let key = word.to_lowercase();
+    document
+        .words
+        .iter()
+        .find(|page| !reused.contains(&page.id) && page.word.trim().to_lowercase() == key)
+        .map(|page| page.id.clone())
+}
+
 /// 把文档序列化为磁盘格式：2 空格缩进、末尾换行（与前端序列化一致）。
 pub(crate) fn serialize(document: &WordGroupDocument) -> Result<String, CommandError> {
     let mut text = serde_json::to_string_pretty(document).map_err(|error| {

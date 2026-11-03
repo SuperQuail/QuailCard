@@ -8,7 +8,7 @@ use crate::{
     services::{
         agent_ports::{
             AgentCall, AgentCards, AgentFuture, AgentLearning, AgentModel, AgentModelReply,
-            AgentPorts, AgentVideo, PreparedGeneration,
+            AgentPorts, AgentVideo, AgentWordGroups, PreparedGeneration,
         },
         agent_tasks::AgentTasks,
         generation_ports::{DictionaryLookup, PortFuture},
@@ -69,6 +69,7 @@ fn read_note_pages_with_line_numbers_and_hash() {
         video: &FakeVideo,
         dictionary: &FakeDictionary,
         cards: &cards,
+        word_groups: &TEST_WORD_GROUPS,
         scope: &[],
         write_scope: crate::services::agent_write_scope::WriteAuthority::Root,
         operation: "read-test",
@@ -161,6 +162,7 @@ async fn persists_reasoning_before_text() {
             video: &FakeVideo,
             dictionary: &FakeDictionary,
             cards: &cards,
+            word_groups: &TEST_WORD_GROUPS,
         },
         &mut session,
         &input,
@@ -211,6 +213,7 @@ async fn interrupted_stream_preserves_text() {
             video: &FakeVideo,
             dictionary: &FakeDictionary,
             cards: &cards,
+            word_groups: &TEST_WORD_GROUPS,
         },
         &mut session,
         &input,
@@ -343,6 +346,7 @@ async fn execute_fixture(
                 video: &FakeVideo,
                 dictionary: &FakeDictionary,
                 cards: &cards,
+                word_groups: &TEST_WORD_GROUPS,
             },
             &mut session,
             &input,
@@ -644,6 +648,7 @@ async fn cancellation_before_editor_ack_does_not_write() {
                     video: &FakeVideo,
                     dictionary: &FakeDictionary,
                     cards: &cards,
+                    word_groups: &TEST_WORD_GROUPS,
                 },
                 &mut session,
                 &input,
@@ -759,6 +764,7 @@ async fn card_tools_enforce_scope_before_port() {
         video: &FakeVideo,
         dictionary: &FakeDictionary,
         cards: &cards,
+        word_groups: &TEST_WORD_GROUPS,
         scope: &scope,
         write_scope: crate::services::agent_write_scope::WriteAuthority::Root,
         operation: "card-test",
@@ -803,4 +809,275 @@ async fn card_tools_enforce_scope_before_port() {
     assert_eq!(message.kind, "card");
     assert_eq!(message.data["state"], "deleted");
     assert_eq!(message.data["front"], "问题");
+}
+
+/// 单词组端口替身：默认没有已存在文件，借此覆盖"创建/更新"两条路径。
+static TEST_WORD_GROUPS: FakeWordGroups = FakeWordGroups {
+    existing: Mutex::new(None),
+    root: None,
+    synced: Mutex::new(Vec::new()),
+};
+
+struct FakeWordGroups {
+    /// Some 表示文件已存在；新建路径必须为 None。
+    existing: Mutex<Option<String>>,
+    /// 绑定真实目录时优先读盘，其余场景读 existing。
+    root: Option<std::path::PathBuf>,
+    /// 同步调用记录：用于断言写入后确实刷新了索引与卡片。
+    synced: Mutex<Vec<String>>,
+}
+
+impl FakeWordGroups {
+    /// 构造独立替身：existing 模拟磁盘上是否已有同名单词组。
+    fn with_existing(existing: Option<&str>) -> Self {
+        Self {
+            existing: Mutex::new(existing.map(str::to_string)),
+            root: None,
+            synced: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// 绑定真实临时目录：多步测试里"先创建再更新"能读到刚写入的文件。
+    fn for_root(root: &std::path::Path) -> Self {
+        Self {
+            existing: Mutex::new(None),
+            root: Some(root.to_path_buf()),
+            synced: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl AgentWordGroups for FakeWordGroups {
+    fn load<'a>(&'a self, path: &'a str) -> AgentFuture<'a, Option<String>> {
+        Box::pin(async move {
+            if let Some(root) = &self.root {
+                return match std::fs::read_to_string(root.join(path)) {
+                    Ok(content) => Ok(Some(content)),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                    Err(error) => Err(error.into()),
+                };
+            }
+            Ok(self.existing.lock().unwrap().clone())
+        })
+    }
+
+    fn sync<'a>(&'a self, _: &'a str, content: &'a str) -> AgentFuture<'a, ()> {
+        let content = content.to_string();
+        Box::pin(async move {
+            self.synced.lock().unwrap().push(content);
+            Ok(())
+        })
+    }
+}
+
+/// 构造单词组工具上下文：真实仓库落临时目录，端口替身便于断言同步次数与内容。
+fn word_group_context<'a>(
+    files: &'a AgentFiles,
+    cards: &'a FakeCards,
+    word_groups: &'a FakeWordGroups,
+    operation: &'a str,
+) -> tools::ToolContext<'a> {
+    tools::ToolContext {
+        repository: files,
+        learning: &FakeLearning,
+        video: &FakeVideo,
+        dictionary: &FakeDictionary,
+        cards,
+        word_groups,
+        scope: &[],
+        write_scope: crate::services::agent_write_scope::WriteAuthority::Root,
+        operation,
+    }
+}
+
+#[tokio::test]
+/// 创建单词组：后端生成页 id、真实写盘，并把内容交给同步端口物化卡片。
+async fn create_word_group_writes_document_and_syncs() {
+    let root = TempDir::new();
+    let files = AgentFiles::new(root.path()).unwrap();
+    let cards = FakeCards::default();
+    let word_groups = FakeWordGroups::with_existing(None);
+    let operation = uuid::Uuid::now_v7().to_string();
+    let context = word_group_context(&files, &cards, &word_groups, &operation);
+    let registered = tools::registry();
+    let create = registered
+        .iter()
+        .find(|tool| tool.spec.name == "create_word_group")
+        .expect("create_word_group 必须注册");
+    assert!(create.spec.writes());
+    assert!(create.async_handler.is_some());
+    assert_eq!(create.spec.schema["required"], json!(["path", "words"]));
+
+    let args = json!({
+        "path": "英语/词汇.qword",
+        "words": [
+            {"word": "ephemeral", "phonetic": "/ɪˈfemərəl/", "meaning": "短暂的"},
+            {"word": "frugal", "meaning": "节俭的"}
+        ]
+    });
+    let outcome = (create.async_handler.unwrap())(&context, &args)
+        .await
+        .expect("创建成功");
+    assert_eq!(outcome.value["pages"], 2);
+    assert_eq!(outcome.value["cards"], 2);
+
+    // 真实落盘：目录按路径创建，文档可被领域解析且 id 非空。
+    let written = std::fs::read_to_string(root.path().join("英语/词汇.qword")).unwrap();
+    let document = crate::word_group::parse(&written).unwrap();
+    assert_eq!(document.words.len(), 2);
+    assert!(document.words.iter().all(|page| !page.id.is_empty()));
+    assert_eq!(document.words[0].meaning, "短暂的");
+
+    // 同步端口拿到同一份内容，用户可见的改动块也留下了。
+    let synced = word_groups.synced.lock().unwrap().clone();
+    assert_eq!(synced.len(), 1);
+    assert_eq!(synced[0], written);
+    let message = outcome.message.expect("写入必须留下可见改动块");
+    assert_eq!(message.kind, "change");
+    assert_eq!(message.data["pages"], 2);
+}
+
+#[tokio::test]
+/// 同名文件已存在时创建失败：不覆盖用户已有单词组。
+async fn create_word_group_rejects_existing_file() {
+    let root = TempDir::new();
+    let files = AgentFiles::new(root.path()).unwrap();
+    let cards = FakeCards::default();
+    let word_groups = FakeWordGroups::with_existing(Some("{}"));
+    let operation = uuid::Uuid::now_v7().to_string();
+    let context = word_group_context(&files, &cards, &word_groups, &operation);
+    let create = tools::registry()
+        .into_iter()
+        .find(|tool| tool.spec.name == "create_word_group")
+        .unwrap();
+    let args = json!({"path":"词汇.qword","words":[{"word":"ephemeral","meaning":"短暂的"}]});
+    let error = (create.async_handler.unwrap())(&context, &args)
+        .await
+        .err()
+        .expect("必须冲突");
+    assert_eq!(error.code, "AGENT_NOTE_CONFLICT");
+    assert!(!root.path().join("词汇.qword").exists());
+}
+
+#[tokio::test]
+/// 更新单词组：必须提交 hash，按单词沿用旧 id，未出现的页从文件里移除。
+async fn update_word_group_requires_hash_and_keeps_page_ids() {
+    let root = TempDir::new();
+    let files = AgentFiles::new(root.path()).unwrap();
+    let cards = FakeCards::default();
+    let word_groups = FakeWordGroups::for_root(root.path());
+    let create_operation = uuid::Uuid::now_v7().to_string();
+    let create = tools::registry()
+        .into_iter()
+        .find(|tool| tool.spec.name == "create_word_group")
+        .unwrap();
+    let created = json!({
+        "path": "词汇.qword",
+        "words": [
+            {"word": "ephemeral", "meaning": "短暂的"},
+            {"word": "frugal", "meaning": "节俭的"}
+        ]
+    });
+    (create.async_handler.unwrap())(
+        &word_group_context(&files, &cards, &word_groups, &create_operation),
+        &created,
+    )
+    .await
+    .unwrap();
+    let hash = files.read("词汇.qword").unwrap()["hash"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let before = crate::word_group::parse(
+        &std::fs::read_to_string(root.path().join("词汇.qword")).unwrap(),
+    )
+    .unwrap();
+    let ephemeral_id = before.words[0].id.clone();
+
+    let update = tools::registry()
+        .into_iter()
+        .find(|tool| tool.spec.name == "update_word_group")
+        .unwrap();
+    let update_operation = uuid::Uuid::now_v7().to_string();
+    let context = word_group_context(&files, &cards, &word_groups, &update_operation);
+    // 缺 hash：直接拒绝，避免覆盖并发修改。
+    let missing = json!({"path":"词汇.qword","words":[{"word":"ephemeral","meaning":"短暂的"}]});
+    assert_eq!(
+        (update.async_handler.unwrap())(&context, &missing)
+            .await
+            .err()
+            .unwrap()
+            .code,
+        "VALIDATION_ERROR"
+    );
+    // 留下其中一页：ephemeral 沿用旧 id，frugal 被删除。
+    let args = json!({
+        "path": "词汇.qword",
+        "expectedHash": hash,
+        "words": [{"word": "Ephemeral", "meaning": "短暂的（新）"}]
+    });
+    let outcome = (update.async_handler.unwrap())(&context, &args)
+        .await
+        .expect("更新成功");
+    assert_eq!(outcome.value["pages"], 1);
+    let after = crate::word_group::parse(
+        &std::fs::read_to_string(root.path().join("词汇.qword")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(after.words.len(), 1);
+    assert_eq!(after.words[0].id, ephemeral_id);
+    assert_eq!(after.words[0].meaning, "短暂的（新）");
+}
+
+#[tokio::test]
+/// 路径与内容守住边界：.md 不能用单词组工具，单词组也不能用 edit_note。
+async fn word_group_tools_enforce_path_and_field_rules() {
+    let root = TempDir::new();
+    let files = AgentFiles::new(root.path()).unwrap();
+    let cards = FakeCards::default();
+    let word_groups = FakeWordGroups::with_existing(None);
+    let operation = uuid::Uuid::now_v7().to_string();
+    let context = word_group_context(&files, &cards, &word_groups, &operation);
+    let registry = tools::registry();
+    let create = registry
+        .iter()
+        .find(|tool| tool.spec.name == "create_word_group")
+        .unwrap();
+    let md_path = json!({"path":"词汇.md","words":[{"word":"ephemeral","meaning":"短暂的"}]});
+    assert_eq!(
+        (create.async_handler.unwrap())(&context, &md_path)
+            .await
+            .err()
+            .unwrap()
+            .code,
+        "WORD_GROUP_PATH_INVALID"
+    );
+    let unknown = json!({"path":"词汇.qword","words":[{"word":"ephemeral","meaning":"短暂的","id":"hack"}]});
+    assert_eq!(
+        (create.async_handler.unwrap())(&context, &unknown)
+            .await
+            .err()
+            .unwrap()
+            .code,
+        "WORD_GROUP_INVALID"
+    );
+    let no_word = json!({"path":"词汇.qword","words":[{"meaning":"短暂的"}]});
+    assert_eq!(
+        (create.async_handler.unwrap())(&context, &no_word)
+            .await
+            .err()
+            .unwrap()
+            .code,
+        "WORD_GROUP_INVALID"
+    );
+
+    let edit = registry
+        .iter()
+        .find(|tool| tool.spec.name == "edit_note")
+        .unwrap();
+    let edit_args = json!({"path":"词汇.qword","content":"{}","expectedHash":"h"});
+    assert_eq!(
+        (edit.handler)(&context, &edit_args).err().unwrap().code,
+        "WORD_GROUP_TOOL_REQUIRED"
+    );
 }

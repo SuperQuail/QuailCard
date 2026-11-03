@@ -42,6 +42,7 @@ async fn run_with_legacy_settings(
             video: &FakeVideo,
             dictionary: &FakeDictionary,
             cards: &FakeCards::default(),
+            word_groups: &TEST_WORD_GROUPS,
         },
         session,
         &input,

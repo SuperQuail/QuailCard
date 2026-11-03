@@ -16,7 +16,7 @@
 - frontmatter（强制）：只读，应用**永不写回** YAML 头；解析失败按"无元数据"处理，绝不阻断 Vault 扫描。标签 = frontmatter 声明（在前）+ 正文行内标签，合并去重后限量；别名参与双链解析与补全。
 - 图片附件动作（强制）：编辑器里图片的**复制 / 下载 / 在文件夹中定位**一律由后端解析引用（`vaultfs::attachments::attachment_file_path`）并校验后再执行，前端只提交 `(notePath, source)`，**不提交任何文件路径**。另存目标只能来自系统另存对话框，写入必须"同目录临时文件 + rename"替换，禁止半截文件；单个附件上限 10 MiB（`MAX_IMAGE_BYTES`）对导入、读取、复制、另存统一生效。剪贴板写入走 `image_clipboard`（解码 → RGBA → arboard），失败只回 `CLIPBOARD_ERROR`/`SAVE_ERROR`/`IMAGE_DECODE_ERROR` 等安全错误码。
 - 删除语义（强制）：删除默认走**系统回收站**（`vaultfs::remove` 的 `Remover` 策略），只有用户在设置里显式开启「永久删除」才直删。回收站模式下笔记的卡片文件必须**移到 `.quailcard/.detached/`** 而不是删除，使用户从回收站还原笔记后卡片与复习历史能自动接回（接回发生在卡片加载前，见 `storage/card_detach.rs`）。隔离区不属于 active 数据：加载跳过、损坏跳过、超过 30 天的孤儿在打开 Vault 时清理。
-- 单词组（强制）：`.qword` 是用户数据、不可再生——保存前先解析校验（版本熔断、页面 id 唯一、字段上限），校验失败**绝不写盘**；写完文件后同步卡片。卡片是派生数据但复习历史不是：改名/移动保留历史，只有页面被删除时才删对应卡片；草稿页（缺单词或释义）不新建也不删已有卡片。打开 Vault 或重扫时对账卡片，解析失败只记日志并跳过，绝不自动重置文件。单词组不参与双链解析、不写 frontmatter、不进入 Agent 读写范围；卡片路径固定为 `.quailcard/wordgroups/`，扩展名判定集中在 `vaultfs/documents.rs` 与 `src/domain/documentKind.ts`。
+- 单词组（强制）：`.qword` 是用户数据、不可再生——保存前先解析校验（版本熔断、页面 id 唯一、字段上限），校验失败**绝不写盘**；写完文件后同步卡片。卡片是派生数据但复习历史不是：改名/移动保留历史，只有页面被删除时才删对应卡片；草稿页（缺单词或释义）不新建也不删已有卡片。打开 Vault 或重扫时对账卡片，解析失败只记日志并跳过，绝不自动重置文件。单词组不参与双链解析、不写 frontmatter；卡片路径固定为 `.quailcard/wordgroups/`，扩展名判定集中在 `vaultfs/documents.rs` 与 `src/domain/documentKind.ts`。Agent 只能通过 `create_word_group` / `update_word_group` 写单词组（结构化词表、后端生成页 id，写盘后同步索引与卡片），不能用 `create_note`/`edit_note` 手写 JSON。
 
 ## 目录与分层边界
 

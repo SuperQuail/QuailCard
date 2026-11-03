@@ -2,7 +2,8 @@ use crate::ai::tools::spec::{ToolEffect, ToolSpec};
 use crate::ai::tools::validate;
 use crate::ai::ToolDefinition;
 use crate::services::agent_ports::{
-    AgentCards, AgentFuture, AgentLearning, AgentRepository, AgentVideo, PreparedGeneration,
+    AgentCards, AgentFuture, AgentLearning, AgentRepository, AgentVideo, AgentWordGroups,
+    PreparedGeneration,
 };
 use crate::services::agent_write_scope::WriteAuthority;
 use crate::services::generation_ports::DictionaryLookup;
@@ -34,6 +35,8 @@ pub(super) struct ToolContext<'a> {
     pub dictionary: &'a dyn DictionaryLookup,
     /// 卡片管理：Agent 只按笔记列出与删除卡片。
     pub cards: &'a dyn AgentCards,
+    /// 单词组：写入后由用例层同步索引与卡片，模型不碰页 id。
+    pub word_groups: &'a dyn AgentWordGroups,
     pub scope: &'a [String],
     /// 本会话的笔记写入授权：根为整库，子代理只拥有父级授予的路径。
     pub write_scope: WriteAuthority<'a>,
@@ -92,7 +95,7 @@ pub(super) fn registry() -> Vec<RegisteredTool> {
         ),
         tool(
             "read_note",
-            "读取 Markdown 的分页窗口（带行号与 hash）；用返回的 nextOffset 继续读到结尾，编辑前必须完整读取",
+            "读取 Markdown 笔记或单词组（JSON 原文）的分页窗口（带行号与 hash）；用返回的 nextOffset 继续读到结尾，编辑前必须完整读取",
             json!({"path":{"type":"string"},"offset":{"type":"integer","minimum":1},"limit":{"type":"integer","minimum":1,"maximum":2000}}),
             &["path"],
             false,
@@ -100,7 +103,7 @@ pub(super) fn registry() -> Vec<RegisteredTool> {
         ),
         tool(
             "create_note",
-            "创建新 Markdown 笔记，不能覆盖同名文件",
+            "创建新 Markdown 笔记，不能覆盖同名文件；单词组请用 create_word_group",
             json!({"path":{"type":"string"},"content":{"type":"string"}}),
             &["path", "content"],
             true,
@@ -108,12 +111,30 @@ pub(super) fn registry() -> Vec<RegisteredTool> {
         ),
         tool(
             "edit_note",
-            "以完整新正文修改笔记，必须提交刚读取的 hash",
+            "以完整新正文修改 Markdown 笔记，必须提交刚读取的 hash；单词组请用 update_word_group",
             json!({"path":{"type":"string"},"content":{"type":"string"},"expectedHash":{"type":"string"}}),
             &["path", "content", "expectedHash"],
             true,
             handlers::edit,
         ),
+        tool(
+            "create_word_group",
+            "创建单词组（.qword）：提交单词列表，后端生成页 id，保存后自动生成听写卡片；不能覆盖同名文件",
+            json!({"path":{"type":"string"},"words":word_group_entries_schema()}),
+            &["path", "words"],
+            true,
+            handlers::create_word_group_sync,
+        )
+        .with_async(handlers::create_word_group),
+        tool(
+            "update_word_group",
+            "整体更新单词组：提交完整词表与刚读取的 hash；按单词沿用旧页 id 保住复习历史，未出现的页会被删除（连同其复习记录）",
+            json!({"path":{"type":"string"},"words":word_group_entries_schema(),"expectedHash":{"type":"string"}}),
+            &["path", "words", "expectedHash"],
+            true,
+            handlers::update_word_group_sync,
+        )
+        .with_async(handlers::update_word_group),
         tool(
             "start_review",
             "展示正式复习卡并等待用户作答；today 为到期复习，notes 为指定笔记全部卡片",
@@ -209,7 +230,12 @@ pub(super) const CHILD_READ_TOOLS: &[&str] = &[
 ];
 
 /// 子代理唯一允许的写工具集合；只有父级显式授予 writeScope 时才出现。
-pub(super) const CHILD_WRITE_TOOLS: &[&str] = &["create_note", "edit_note"];
+pub(super) const CHILD_WRITE_TOOLS: &[&str] = &[
+    "create_note",
+    "edit_note",
+    "create_word_group",
+    "update_word_group",
+];
 
 /// 子代理工具策略：默认只读，不再依赖调用点维护名字白名单。
 ///
@@ -228,6 +254,26 @@ pub(super) fn child_policy(
             ToolEffect::Mutate | ToolEffect::External => false,
         })
         .collect()
+}
+
+/// 单词组页对象 Schema：字段与 .qword 契约一一对应，id 由后端生成。
+fn word_group_entries_schema() -> Value {
+    json!({
+        "type":"array",
+        "minItems":1,
+        "maxItems":50,
+        "items":{
+            "type":"object",
+            "properties":{
+                "word":{"type":"string"},
+                "phonetic":{"type":"string"},
+                "meaning":{"type":"string"},
+                "example":{"type":"string"}
+            },
+            "required":["word"],
+            "additionalProperties":false
+        }
+    })
 }
 
 /// 最小 Schema 保持输入明确，执行前另行校验类型、范围及长度。

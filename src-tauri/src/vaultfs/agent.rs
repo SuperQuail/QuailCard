@@ -1,4 +1,4 @@
-use super::{sanitize_agent_note, sanitize_relative, VaultState};
+use super::{sanitize_agent_document, sanitize_relative, VaultState};
 use crate::error::CommandError;
 use std::path::{Component, PathBuf};
 
@@ -38,8 +38,8 @@ impl VaultState {
         Ok(target)
     }
 
-    /// Agent 仅访问普通 Markdown，内部目录与隐藏目录不作为材料。
-    pub(crate) fn agent_note_path(&self, relative: &str) -> Result<PathBuf, CommandError> {
-        self.safe_path(&sanitize_agent_note(relative)?)
+    /// Agent 只访问受支持的文档：Markdown 与单词组；内部目录与隐藏目录不作为材料。
+    pub(crate) fn agent_document_path(&self, relative: &str) -> Result<PathBuf, CommandError> {
+        self.safe_path(&sanitize_agent_document(relative)?)
     }
 }

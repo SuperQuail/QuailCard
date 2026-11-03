@@ -11,7 +11,7 @@ use crate::{
         AppServices,
     },
     storage::{agent::AgentFiles, Storage},
-    vaultfs::VaultState,
+    vaultfs::{documents::DocumentKind, VaultState},
 };
 use tauri::Manager;
 
@@ -272,6 +272,13 @@ pub(crate) async fn undo(app: &tauri::AppHandle, id: &str) -> Result<AgentChange
     let repository = files(app)?;
     let change = repository.get_change(id)?;
     let storage = app.state::<Storage>();
+    // 单词组卡片在保存时就物化：撤销“新建单词组”必须连卡片一起回收，
+    // 否则 has_cards 会永远拦住撤销；撤销已有文件的修改只是恢复正文，照常拦。
+    if change.before.is_none()
+        && DocumentKind::of_path(&change.path) == Some(DocumentKind::WordGroup)
+    {
+        storage.delete_note_paths(&change.path).await?;
+    }
     let has_cards = !storage.list_note_cards(&change.path).await?.is_empty();
     let result = repository.undo(id, has_cards)?;
     let vault = app.state::<VaultState>();

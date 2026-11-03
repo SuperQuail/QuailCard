@@ -340,6 +340,7 @@ async fn root_grants_child_scope_and_status_reports_it() {
                 video: &VIDEO,
                 dictionary: &DICTIONARY,
                 cards: &cards,
+                word_groups: &TEST_WORD_GROUPS,
             },
             &mut session,
             &input,

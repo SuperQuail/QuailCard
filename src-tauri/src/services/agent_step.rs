@@ -169,6 +169,7 @@ impl TurnStep for AgentTurn<'_> {
                     video: self.ports.video,
                     dictionary: self.ports.dictionary,
                     cards: self.ports.cards,
+                    word_groups: self.ports.word_groups,
                     scope: &self.input.selected_paths,
                     write_scope: authority,
                     operation: &operation,

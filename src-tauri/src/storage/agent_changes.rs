@@ -22,10 +22,17 @@ impl AgentFiles {
         }
         // 锁键取净化后的规范路径：别名写法不能落到两把锁上。
         // 顺序契约：这里只取路径锁，绝不再取 SESSION_WRITE（见 agent_path_locks）。
-        let key = crate::vaultfs::sanitize_agent_note(path)?;
+        let key = crate::vaultfs::sanitize_agent_document(path)?;
+        // 单词组是结构化文件：非法 JSON 或越界字段一律在写盘前拒绝，
+        // 否则 agent 会把坏文件留在知识库里，卡片也同步不出来。
+        if crate::vaultfs::documents::DocumentKind::of_path(&key)
+            == Some(crate::vaultfs::documents::DocumentKind::WordGroup)
+        {
+            crate::word_group::parse(content)?;
+        }
         let lock = super::path_locks::lock(&key)?;
         let _guard = super::path_locks::enter(&lock);
-        let target = self.vault.agent_note_path(&key)?;
+        let target = self.vault.agent_document_path(&key)?;
         let record = self.record_path("changes", id)?;
         if let Some(change) = envelope::load_json::<AgentChange>(&record, &CORRUPT)? {
             return self.reconcile(change);
@@ -69,7 +76,7 @@ impl AgentFiles {
     /// 崩溃恢复只核对文件，不自动重放待执行写入。
     fn reconcile(&self, mut change: AgentChange) -> Result<AgentChange, CommandError> {
         if change.state == "pending" || change.state == "undoing" {
-            let target = self.vault.agent_note_path(&change.path)?;
+            let target = self.vault.agent_document_path(&change.path)?;
             let current = std::fs::read_to_string(target).ok().as_deref().map(hash);
             change.state = if current.as_deref() == Some(&change.after_hash) {
                 "applied"
@@ -102,10 +109,10 @@ impl AgentFiles {
             return Ok(change);
         }
         // 撤销同样是笔记写入：与 apply_change 共用同一把按路径锁。
-        let key = crate::vaultfs::sanitize_agent_note(&change.path)?;
+        let key = crate::vaultfs::sanitize_agent_document(&change.path)?;
         let lock = super::path_locks::lock(&key)?;
         let _guard = super::path_locks::enter(&lock);
-        let target = self.vault.agent_note_path(&key)?;
+        let target = self.vault.agent_document_path(&key)?;
         let current = std::fs::read_to_string(&target)?;
         if change.state != "applied"
             || hash(&current) != change.after_hash
@@ -122,9 +129,13 @@ impl AgentFiles {
         if let Some(before) = &change.before {
             envelope::write_atomic(&target, before.as_bytes())?;
         } else {
+            // 回收副本保留原扩展名：单词组撤销后仍能按 .qword 还原。
+            let extension = crate::vaultfs::documents::DocumentKind::of_path(&key)
+                .map(|kind| kind.extension())
+                .unwrap_or(".md");
             let recycle = self
                 .vault
-                .safe_path(&format!(".quailcard/agent/.recycle/{id}.md"))?;
+                .safe_path(&format!(".quailcard/agent/.recycle/{id}{extension}"))?;
             if let Some(parent) = recycle.parent() {
                 std::fs::create_dir_all(parent)?;
             }

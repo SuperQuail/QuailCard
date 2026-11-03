@@ -4,7 +4,15 @@ use super::{block, ToolContext, ToolOutcome};
 use crate::error::CommandError;
 use crate::services::agent_ports::AgentFuture;
 use crate::services::generation_dictionary::resolve_lookup_result;
+use crate::vaultfs::documents::DocumentKind;
+use crate::word_group;
 use serde_json::{json, Value};
+
+/// 单词组单次提交的页数上限：与工具 Schema 的 maxItems 保持一致。
+const WORD_GROUP_PAGE_LIMIT: usize = 50;
+
+/// 单词组页允许的字段；id 由后端生成，模型不能指定或猜。
+const WORD_GROUP_PAGE_FIELDS: [&str; 4] = ["word", "phonetic", "meaning", "example"];
 
 /// 路径统一正斜线，范围判断不能被大小写或路径别名绕过。
 pub(super) fn scoped(scope: &[String], path: &str) -> Result<(), CommandError> {
@@ -75,6 +83,7 @@ pub(super) fn read(context: &ToolContext<'_>, args: &Value) -> Result<ToolOutcom
 pub(super) fn create(context: &ToolContext<'_>, args: &Value) -> Result<ToolOutcome, CommandError> {
     // 执行期二次校验：definitions 只是声明，写盘前必须按本会话 writeScope 复核。
     context.write_scope.check_create(string(args, "path"))?;
+    reject_word_group_path(string(args, "path"))?;
     change(context, args, None)
 }
 
@@ -82,7 +91,88 @@ pub(super) fn create(context: &ToolContext<'_>, args: &Value) -> Result<ToolOutc
 pub(super) fn edit(context: &ToolContext<'_>, args: &Value) -> Result<ToolOutcome, CommandError> {
     scoped(context.scope, string(args, "path"))?;
     context.write_scope.check_edit(string(args, "path"))?;
+    reject_word_group_path(string(args, "path"))?;
     change(context, args, Some(string(args, "expectedHash")))
+}
+
+/// 单词组必须走专用工具：手写 JSON 会绕过页 id 与卡片物化规则。
+fn reject_word_group_path(path: &str) -> Result<(), CommandError> {
+    if DocumentKind::of_path(path) == Some(DocumentKind::WordGroup) {
+        return Err(CommandError::new(
+            "WORD_GROUP_TOOL_REQUIRED",
+            "单词组请用 create_word_group / update_word_group 写入",
+        ));
+    }
+    Ok(())
+}
+
+/// 单词组路径必须是 .qword：避免把结构化内容写进 Markdown 笔记。
+fn ensure_word_group_path(path: &str) -> Result<(), CommandError> {
+    if DocumentKind::of_path(path) != Some(DocumentKind::WordGroup) {
+        return Err(CommandError::new(
+            "WORD_GROUP_PATH_INVALID",
+            "单词组路径必须以 .qword 结尾",
+        ));
+    }
+    Ok(())
+}
+
+/// 解析 words 数组：逐项校验字段与类型，未知字段直接拒绝。
+fn word_group_entries(args: &Value) -> Result<Vec<word_group::WordGroupEntry>, CommandError> {
+    let items = args["words"]
+        .as_array()
+        .ok_or_else(|| CommandError::new("WORD_GROUP_INVALID", "words 必须是数组"))?;
+    if items.is_empty() {
+        return Err(CommandError::new(
+            "WORD_GROUP_INVALID",
+            "单词组至少需要一页",
+        ));
+    }
+    if items.len() > WORD_GROUP_PAGE_LIMIT {
+        return Err(CommandError::new(
+            "WORD_GROUP_INVALID",
+            format!("单次最多提交 {WORD_GROUP_PAGE_LIMIT} 页，请分批写入"),
+        ));
+    }
+    let mut entries = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let object = item.as_object().ok_or_else(|| {
+            CommandError::new(
+                "WORD_GROUP_INVALID",
+                format!("单词组第 {} 页不是对象", index + 1),
+            )
+        })?;
+        if let Some(key) = object
+            .keys()
+            .find(|key| !WORD_GROUP_PAGE_FIELDS.contains(&key.as_str()))
+        {
+            return Err(CommandError::new(
+                "WORD_GROUP_INVALID",
+                format!("单词组第 {} 页包含未知字段 {key}", index + 1),
+            ));
+        }
+        let mut fields = Vec::with_capacity(WORD_GROUP_PAGE_FIELDS.len());
+        for key in WORD_GROUP_PAGE_FIELDS {
+            let text = match object.get(key) {
+                None | Some(Value::Null) => String::new(),
+                Some(Value::String(text)) => text.clone(),
+                Some(_) => {
+                    return Err(CommandError::new(
+                        "WORD_GROUP_INVALID",
+                        format!("单词组第 {} 页的 {key} 必须是字符串", index + 1),
+                    ));
+                }
+            };
+            fields.push(text);
+        }
+        entries.push(word_group::WordGroupEntry {
+            word: fields[0].clone(),
+            phonetic: fields[1].clone(),
+            meaning: fields[2].clone(),
+            example: fields[3].clone(),
+        });
+    }
+    Ok(entries)
 }
 
 /// 返回精简操作凭据，完整差异从独立记录加载。
@@ -254,6 +344,108 @@ pub(super) fn delete_card<'a, 'b>(
             message: Some(block("card", "已删除卡片", data)),
             ..Default::default()
         })
+    })
+}
+
+/// 单词组创建必须走异步端口（写入后要同步卡片），同步占位只满足注册表结构。
+pub(super) fn create_word_group_sync(
+    _: &ToolContext<'_>,
+    _: &Value,
+) -> Result<ToolOutcome, CommandError> {
+    Err(CommandError::validation("单词组创建必须异步执行"))
+}
+
+/// 创建单词组：先确认没有同名文件，再按提交字段构造文档、写盘并物化卡片。
+pub(super) fn create_word_group<'a, 'b>(
+    context: &'a ToolContext<'b>,
+    args: &'a Value,
+) -> AgentFuture<'a, ToolOutcome> {
+    Box::pin(async move {
+        let path = string(args, "path");
+        scoped(context.scope, path)?;
+        context.write_scope.check_create(path)?;
+        ensure_word_group_path(path)?;
+        let entries = word_group_entries(args)?;
+        if context.word_groups.load(path).await?.is_some() {
+            return Err(CommandError::new(
+                "AGENT_NOTE_CONFLICT",
+                "同名单词组已存在，请改用 update_word_group",
+            ));
+        }
+        write_word_group(context, path, None, &entries, None).await
+    })
+}
+
+/// 单词组更新必须走异步端口（写入后要同步卡片），同步占位只满足注册表结构。
+pub(super) fn update_word_group_sync(
+    _: &ToolContext<'_>,
+    _: &Value,
+) -> Result<ToolOutcome, CommandError> {
+    Err(CommandError::validation("单词组更新必须异步执行"))
+}
+
+/// 更新单词组：必须提交刚读取的 hash；按单词沿用旧页 id，保住复习历史。
+pub(super) fn update_word_group<'a, 'b>(
+    context: &'a ToolContext<'b>,
+    args: &'a Value,
+) -> AgentFuture<'a, ToolOutcome> {
+    Box::pin(async move {
+        let path = string(args, "path");
+        scoped(context.scope, path)?;
+        context.write_scope.check_edit(path)?;
+        ensure_word_group_path(path)?;
+        let expected = string(args, "expectedHash");
+        if expected.is_empty() {
+            return Err(CommandError::validation("必须提交刚读取的 expectedHash"));
+        }
+        let entries = word_group_entries(args)?;
+        let existing = match context.word_groups.load(path).await? {
+            Some(content) => Some(word_group::parse(&content)?),
+            None => {
+                return Err(CommandError::new(
+                    "WORD_GROUP_NOT_FOUND",
+                    "单词组不存在，请先用 create_word_group 创建",
+                ))
+            }
+        };
+        write_word_group(context, path, existing.as_ref(), &entries, Some(expected)).await
+    })
+}
+
+/// 写入单词组：领域构造 → 写盘（含可撤销记录）→ 同步检索索引与卡片。
+///
+/// 顺序契约：写盘失败不会留下卡片；卡片同步失败时文件已保存，错误码提示可重试。
+async fn write_word_group(
+    context: &ToolContext<'_>,
+    path: &str,
+    existing: Option<&word_group::WordGroupDocument>,
+    entries: &[word_group::WordGroupEntry],
+    expected: Option<&str>,
+) -> Result<ToolOutcome, CommandError> {
+    let document = word_group::build_document(existing, entries)?;
+    let content = word_group::serialize(&document)?;
+    let change = context
+        .repository
+        .change(context.operation, path, &content, expected)?;
+    context.word_groups.sync(path, &content).await?;
+    let data = json!({
+        "changeId": change.id,
+        "path": change.path,
+        "state": change.state,
+        "afterHash": change.after_hash,
+        "pages": document.words.len(),
+        "cards": document
+            .words
+            .iter()
+            .filter(|page| word_group::card_fields(page).is_some())
+            .count(),
+    });
+    Ok(ToolOutcome {
+        value: data.clone(),
+        message: Some(block("change", "单词组改动", data)),
+        pause: false,
+        generation: None,
+        images: Vec::new(),
     })
 }
 

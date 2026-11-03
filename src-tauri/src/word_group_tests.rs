@@ -1,9 +1,9 @@
 //! 单词组领域模型的测试：读容忍、版本熔断、结构校验与卡片字段映射。
 
 use super::{
-    card_fields, initial_document, parse, search_text, serialize, WordGroupDocument, WordPage,
-    FORMAT_VERSION, MAX_EXAMPLE_CHARS, MAX_ID_CHARS, MAX_MEANING_CHARS, MAX_PAGES,
-    MAX_PHONETIC_CHARS, MAX_WORD_CHARS,
+    build_document, card_fields, initial_document, new_id, parse, search_text, serialize, valid_id,
+    WordGroupDocument, WordGroupEntry, WordPage, FORMAT_VERSION, MAX_EXAMPLE_CHARS, MAX_ID_CHARS,
+    MAX_MEANING_CHARS, MAX_PAGES, MAX_PHONETIC_CHARS, MAX_WORD_CHARS,
 };
 
 /// 构造一个最小完整页面，测试按需覆盖字段。
@@ -171,4 +171,111 @@ fn serializes_stable_json_and_roundtrips() {
     assert!(text.starts_with("{\n  \"formatVersion\": 1,"));
     assert!(text.ends_with("}\n"));
     assert_eq!(parse(&text).unwrap(), value);
+}
+
+/// 构造一页 Agent 提交的字段，测试按需覆盖。
+fn entry(word: &str, meaning: &str) -> WordGroupEntry {
+    WordGroupEntry {
+        word: word.to_string(),
+        phonetic: String::new(),
+        meaning: meaning.to_string(),
+        example: String::new(),
+    }
+}
+
+#[test]
+/// 新建单词组：id 由后端生成且合法唯一，字段去首尾空白。
+fn build_document_generates_ids_for_new_group() {
+    let trimmed = WordGroupEntry {
+        word: " episodic ".into(),
+        phonetic: " /x/ ".into(),
+        meaning: "  episodic 的释义 ".into(),
+        example: " example ".into(),
+    };
+    let document = build_document(None, &[trimmed, entry("frugal", "节俭的")]).expect("构造成功");
+    assert_eq!(document.format_version, FORMAT_VERSION);
+    assert_eq!(document.words.len(), 2);
+    assert_eq!(document.words[0].word, "episodic");
+    assert_eq!(document.words[0].phonetic, "/x/");
+    assert_eq!(document.words[0].meaning, "episodic 的释义");
+    assert_eq!(document.words[0].example, "example");
+    let ids: Vec<&str> = document.words.iter().map(|page| page.id.as_str()).collect();
+    assert!(ids.iter().all(|id| valid_id(id)), "id 必须合法：{ids:?}");
+    assert_ne!(ids[0], ids[1]);
+    assert!(!new_id().is_empty());
+}
+
+#[test]
+/// 更新单词组：按单词沿用旧页 id，保住对应卡片的复习历史；新词拿新 id。
+fn build_document_reuses_ids_by_word() {
+    let existing = document(vec![
+        page("old-1", "ephemeral", "短暂的"),
+        page("old-2", "frugal", "节俭的"),
+    ]);
+    let entries = [
+        entry("Frugal ", "节俭的（补充）"),
+        entry("ephemeral", "短暂的"),
+        entry("resilient", "有韧性的"),
+    ];
+    let updated = build_document(Some(&existing), &entries).expect("构造成功");
+    assert_eq!(updated.words.len(), 3);
+    // 顺序按提交顺序，但 id 跟着单词走。
+    assert_eq!(updated.words[0].id, "old-2");
+    assert_eq!(updated.words[1].id, "old-1");
+    assert!(valid_id(&updated.words[2].id));
+    assert_ne!(updated.words[2].id, "old-1");
+    assert_ne!(updated.words[2].id, "old-2");
+}
+
+#[test]
+/// 同一单词提交两页时不能抢同一个旧 id：第二页必须拿到新 id。
+fn build_document_gives_duplicate_words_distinct_ids() {
+    let existing = document(vec![page("old-1", "ephemeral", "短暂的")]);
+    let updated = build_document(
+        Some(&existing),
+        &[
+            entry("ephemeral", "短暂的"),
+            entry("ephemeral", "另一个义项"),
+        ],
+    )
+    .expect("构造成功");
+    assert_eq!(updated.words[0].id, "old-1");
+    assert_ne!(updated.words[1].id, "old-1");
+    assert!(valid_id(&updated.words[1].id));
+}
+
+#[test]
+/// 缺单词或字段越界的页在构造阶段就被拒绝，调用方不会写盘。
+fn build_document_rejects_invalid_entries() {
+    assert_eq!(
+        build_document(None, &[entry("   ", "释义")])
+            .err()
+            .unwrap()
+            .code,
+        "WORD_GROUP_INVALID"
+    );
+    let long_word = "a".repeat(MAX_WORD_CHARS + 1);
+    assert_eq!(
+        build_document(None, &[entry(&long_word, "释义")])
+            .err()
+            .unwrap()
+            .code,
+        "WORD_GROUP_INVALID"
+    );
+    let long_meaning = "字".repeat(MAX_MEANING_CHARS + 1);
+    assert_eq!(
+        build_document(None, &[entry("word", &long_meaning)])
+            .err()
+            .unwrap()
+            .code,
+        "WORD_GROUP_INVALID"
+    );
+    // 允许空释义的草稿页：单词组编辑器同样允许只填单词。
+    assert_eq!(
+        build_document(None, &[entry("draft", "")])
+            .unwrap()
+            .words
+            .len(),
+        1
+    );
 }

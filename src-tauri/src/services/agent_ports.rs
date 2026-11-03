@@ -19,6 +19,8 @@ pub(crate) struct AgentPorts<'a> {
     pub video: &'a dyn AgentVideo,
     pub dictionary: &'a dyn DictionaryLookup,
     pub cards: &'a dyn AgentCards,
+    /// 单词组读写：写入后同步索引与卡片，卡片是派生数据不能靠模型维护。
+    pub word_groups: &'a dyn AgentWordGroups,
 }
 
 /// 用例只依赖笔记与会话所需的窄接口，不持有 Storage 或文件系统。
@@ -112,6 +114,14 @@ pub(crate) trait AgentCards: Send + Sync {
     fn list<'a>(&'a self, note_path: &'a str) -> AgentFuture<'a, Value>;
     /// 删除指定笔记下的一张卡片；实现方必须复核卡片确实属于该笔记。
     fn delete<'a>(&'a self, note_path: &'a str, card_id: &'a str) -> AgentFuture<'a, Value>;
+}
+
+/// 单词组端口：Agent 只提交结构化字段，id 生成、写盘与卡片物化由用例层编排。
+pub(crate) trait AgentWordGroups: Send + Sync {
+    /// 读取现有单词组原文；文件不存在返回 None，交给调用方判断是新建还是冲突。
+    fn load<'a>(&'a self, path: &'a str) -> AgentFuture<'a, Option<String>>;
+    /// 文件已写入后同步检索索引与卡片；失败时文件已保存，调用方必须提示可重试。
+    fn sync<'a>(&'a self, path: &'a str, content: &'a str) -> AgentFuture<'a, ()>;
 }
 
 /// 视频能力端口：Agent 只提交链接，不接触下载、转写与文件系统细节。

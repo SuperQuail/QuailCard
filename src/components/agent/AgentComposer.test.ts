@@ -58,8 +58,8 @@ describe("Agent 输入区交互", () => {
     expect(wrapper.emitted("scope")).toEqual([[[]]]);
   });
 
-  /** 引用列表只含 Markdown：单词组不可被 @ 引用（后端同样不支持 Agent 读写单词组）。 */
-  test("@ 引用列表排除单词组", async () => {
+  /** 引用列表含两种文档：单词组也能被 Agent 读取，写入走专用工具。 */
+  test("@ 引用列表包含 Markdown 与单词组", async () => {
     const wrapper = mount(AgentComposer, {
       props: {
         ...props(),
@@ -72,18 +72,20 @@ describe("Agent 输入区交互", () => {
     await wrapper.get("textarea").setValue("学习@");
     const query = wrapper.get('input[aria-label="搜索引用笔记"]');
     await query.setValue("核心");
-    expect(wrapper.text()).toContain("没有匹配的笔记");
+    expect(wrapper.text()).toContain("英语/核心词.qword");
+    expect(wrapper.text()).not.toContain("没有匹配的笔记");
     await query.setValue("笔记");
     expect(wrapper.text()).toContain("英语/笔记.md");
     wrapper.unmount();
   });
 
-  test("只有单词组时提示知识库暂无笔记", async () => {
+  test("只有单词组时也能引用，不提示暂无笔记", async () => {
     const wrapper = mount(AgentComposer, {
       props: { ...props(), notes: [{ path: "英语/核心词.qword", title: "核心词", tagsJson: "[]", aliases: [], cardCount: 0, dueCount: 0, mtime: 1 }] },
     });
     await wrapper.get("textarea").setValue("学习@");
-    expect(wrapper.text()).toContain("知识库中暂无笔记");
+    expect(wrapper.text()).toContain("英语/核心词.qword");
+    expect(wrapper.text()).not.toContain("知识库中暂无笔记");
     wrapper.unmount();
   });
 

@@ -201,3 +201,44 @@ async fn agent_records_do_not_hide_existing_agent_folder_cards() {
         card.id
     );
 }
+
+#[test]
+/// 单词组写前先校验格式；撤销新建组时回收副本保留 .qword 后缀。
+fn word_group_changes_are_validated_and_recycled() {
+    let root = TempDir::new();
+    let files = AgentFiles::new(root.path()).unwrap();
+    let id = Uuid::now_v7().to_string();
+    assert_eq!(
+        files
+            .change(&id, "词汇.qword", "{坏掉的", None)
+            .err()
+            .unwrap()
+            .code,
+        "WORD_GROUP_INVALID"
+    );
+    assert!(!root.path().join("词汇.qword").exists());
+    let content = "{\n  \"formatVersion\": 1,\n  \"words\": [{\"id\":\"p1\",\"word\":\"ephemeral\",\"phonetic\":\"\",\"meaning\":\"短暂的\",\"example\":\"\"}]\n}\n";
+    files.change(&id, "词汇.qword", content, None).unwrap();
+    assert_eq!(files.read("词汇.qword").unwrap()["content"], content);
+    files.undo(&id, false).unwrap();
+    assert!(root
+        .path()
+        .join(format!(".quailcard/agent/.recycle/{id}.qword"))
+        .exists());
+}
+
+#[test]
+/// 单词组检索使用派生文本：按释义命中，片段里不会出现 JSON 结构。
+fn search_matches_word_group_derived_text() {
+    let root = TempDir::new();
+    let files = AgentFiles::new(root.path()).unwrap();
+    let content = "{\n  \"formatVersion\": 1,\n  \"words\": [{\"id\":\"p1\",\"word\":\"ephemeral\",\"phonetic\":\"/x/\",\"meaning\":\"短暂的\",\"example\":\"Fame is ephemeral.\"}]\n}\n";
+    files
+        .change(&Uuid::now_v7().to_string(), "词汇.qword", content, None)
+        .unwrap();
+    let hit = files.search("短暂的", &[]).unwrap();
+    assert_eq!(hit["notes"][0]["path"], "词汇.qword");
+    let snippet = hit["notes"][0]["snippet"].as_str().unwrap();
+    assert!(snippet.contains("短暂的"));
+    assert!(!snippet.contains("formatVersion"));
+}
