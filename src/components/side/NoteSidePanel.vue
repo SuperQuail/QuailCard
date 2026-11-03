@@ -21,6 +21,8 @@ const props = defineProps<{
   /** 编辑器视口顶部的字符偏移；据此在大纲里定位当前小节。 */
   viewportOffset?: number | null;
   backlinks: Backlink[];
+  /** 当前打开的是单词组：页签只保留「单词」，卡片区只读。 */
+  wordGroup?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -35,12 +37,17 @@ const emit = defineEmits<{
   "open-backlink": [path: string, line: number];
 }>();
 
-/** 页签定义；点击只改变 uiStore 里的记忆值，侧栏收起后仍停在同一栏。 */
-const tabs = [
-  { id: "cards", label: "卡片" },
-  { id: "outline", label: "大纲" },
-  { id: "backlinks", label: "反链" },
-];
+/** 页签定义：单词组没有 Markdown 大纲与双链，只保留单词页签。 */
+const tabs = computed(() => props.wordGroup
+  ? [{ id: "cards", label: "单词" }]
+  : [
+    { id: "cards", label: "卡片" },
+    { id: "outline", label: "大纲" },
+    { id: "backlinks", label: "反链" },
+  ]);
+
+/** 单词组强制停在单词页签，避免沿用 Markdown 笔记记住的大纲/反链栏位。 */
+const activeTab = computed(() => (props.wordGroup ? "cards" : sidePanelTab.value));
 
 /** 大纲随正文变化重算；解析成本与正文长度线性相关，仅在右侧栏可见时才有消费者。 */
 const outline = computed(() => buildOutline(props.content));
@@ -70,13 +77,14 @@ function selectTab(id: string): void {
 
 <template>
   <div class="flex h-full flex-col">
-    <SideTabs :tabs="tabs" :active="sidePanelTab" @select="selectTab" />
+    <SideTabs :tabs="tabs" :active="activeTab" @select="selectTab" />
 
     <div class="min-h-0 flex-1">
       <CardPanel
-        v-if="sidePanelTab === 'cards'"
+        v-if="activeTab === 'cards'"
         :cards="cards"
         :active-card-id="activeCardId"
+        :word-group="wordGroup"
         @edit-card="emit('edit-card', $event)"
         @delete-card="emit('delete-card', $event)"
         @add-card="emit('add-card')"
@@ -86,7 +94,7 @@ function selectTab(id: string): void {
         @collapse="emit('collapse')"
       />
       <OutlinePanel
-        v-else-if="sidePanelTab === 'outline'"
+        v-else-if="activeTab === 'outline'"
         :items="outline"
         :active-from="activeHeading"
         @jump="emit('jump', $event)"

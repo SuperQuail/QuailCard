@@ -1,7 +1,16 @@
 import type { NoteSummary } from "./types";
+import { documentKindOf } from "./documentKind";
 
 /** 双链目标的最小信息：解析只需要路径、标题与别名。 */
 export type LinkTarget = Pick<NoteSummary, "path" | "title" | "aliases">;
+
+/**
+ * 双链候选：单词组不参与 [[双链]] 解析（后端 links::resolve 同样过滤）。
+ * 收口在这里，编辑器补全、点击解析与反链判定都从同一处取候选。
+ */
+export function linkTargetsOf(notes: NoteSummary[]): NoteSummary[] {
+  return notes.filter((note) => documentKindOf(note.path) === "markdown");
+}
 
 /**
  * 归一化待比较的字符串：统一分隔符、去掉 .md 后缀与 ./ 前缀、忽略大小写。

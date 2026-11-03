@@ -37,6 +37,8 @@ mod video_bridge;
 mod video_commands;
 mod video_history;
 mod video_login_commands;
+mod word_group;
+mod word_group_commands;
 
 use std::path::PathBuf;
 
@@ -117,6 +119,8 @@ pub fn run() {
             commands::write_note,
             commands::create_note_file,
             commands::create_folder,
+            // 单词组
+            word_group_commands::create_word_group,
             commands::rename_note_file,
             commands::delete_note_file,
             commands::rename_folder,

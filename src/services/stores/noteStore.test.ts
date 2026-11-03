@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import * as backend from "../../api/backend";
-import { activeNoteContent, activeNotePath, lastNotePathChange, noteOperationBusy, notePersistence, notes, renameFolder, renameNoteFile, updateNoteDraft, selectNote, resetForVaultLeave, clearActiveNote } from "./noteStore";
+import { activeNoteContent, activeNotePath, createWordGroup, lastNotePathChange, noteOperationBusy, notePersistence, notes, renameFolder, renameNoteFile, updateNoteDraft, selectNote, resetForVaultLeave, clearActiveNote } from "./noteStore";
 
-vi.mock("../../api/backend", () => ({ readNote: vi.fn(), syncNoteIndex: vi.fn(), writeNote: vi.fn(), renameNoteFile: vi.fn(), renameFolder: vi.fn(), listNotes: vi.fn(), getStudyStats: vi.fn(), resolveErrorMessage: String }));
+vi.mock("../../api/backend", () => ({ readNote: vi.fn(), syncNoteIndex: vi.fn(), writeNote: vi.fn(), createWordGroup: vi.fn(), renameNoteFile: vi.fn(), renameFolder: vi.fn(), listNotes: vi.fn(), getStudyStats: vi.fn(), resolveErrorMessage: String }));
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -139,5 +139,28 @@ describe("改名联动改写引用链接", () => {
     await renameNoteFile("old/a.md", "old/z.md");
     expect(errorMessage.value).toContain("2 篇笔记的引用未能更新");
     expect(errorMessage.value).toContain("other/x.md");
+  });
+});
+
+describe("单词组文件", () => {
+  test("新建后刷新列表并选中新文件", async () => {
+    vi.mocked(backend.createWordGroup).mockResolvedValue({ path: "英语/核心词.qword", title: "核心词", content: "{}", mtime: 3 });
+    vi.mocked(backend.listNotes).mockResolvedValue([{ path: "英语/核心词.qword", title: "核心词", tagsJson: "[]", aliases: [], cardCount: 0, dueCount: 0, mtime: 3 }]);
+    vi.mocked(backend.readNote).mockResolvedValue({ path: "英语/核心词.qword", title: "核心词", content: "{}", mtime: 3 });
+    await createWordGroup("英语", "核心词");
+    expect(backend.createWordGroup).toHaveBeenCalledWith("英语", "核心词");
+    expect(notes.value.map((note) => note.path)).toEqual(["英语/核心词.qword"]);
+    expect(activeNotePath.value).toBe("英语/核心词.qword");
+    expect(activeNoteContent.value).toBe("{}");
+  });
+
+  /** 列表刷新失败时也要先按文档扩展名发布新标题，避免出现 "高频词.qword"。 */
+  test("改名后立即按文档扩展名重算标题", async () => {
+    notes.value = [{ path: "英语/核心词.qword", title: "核心词", tagsJson: "[]", aliases: [], cardCount: 1, dueCount: 0, mtime: 3 }];
+    vi.mocked(backend.renameNoteFile).mockResolvedValue({ path: "英语/高频词.qword", updatedNotes: [], failedNotes: [] });
+    vi.mocked(backend.listNotes).mockRejectedValue(new Error("列表暂不可用"));
+    await renameNoteFile("英语/核心词.qword", "英语/高频词.qword");
+    expect(notes.value[0].path).toBe("英语/高频词.qword");
+    expect(notes.value[0].title).toBe("高频词");
   });
 });

@@ -59,6 +59,39 @@ async fn ignores_unresolved_and_code_links() {
 }
 
 #[tokio::test]
+/// 单词组不参与双链：同名 .md 存在时链接只解析到 Markdown，单词组永不作目标。
+async fn word_groups_are_not_link_targets() {
+    let (storage, _config, _vault) = testutil::test_storage().await;
+    storage.upsert_note_index("组.md", "# 组", 1).await.unwrap();
+    storage
+        .upsert_note_index("组.qword", r#"{"formatVersion":1,"words":[]}"#, 1)
+        .await
+        .unwrap();
+    storage
+        .upsert_note_index("引用.md", "[[组]]\n[[组.qword]]", 1)
+        .await
+        .unwrap();
+    let links = storage.backlinks("组.md").await.unwrap();
+    assert_eq!(links.len(), 1, "只有裸标题那一行能解析到 Markdown 候选");
+    assert_eq!(links[0].line, 1);
+    assert!(
+        storage.backlinks("组.qword").await.unwrap().is_empty(),
+        "单词组不能作为反链目标"
+    );
+
+    // 只有单词组存在时，[[标题]] 不应解析出任何目标。
+    storage
+        .upsert_note_index("唯一.qword", r#"{"formatVersion":1,"words":[]}"#, 1)
+        .await
+        .unwrap();
+    storage
+        .upsert_note_index("另一篇.md", "[[唯一]]", 1)
+        .await
+        .unwrap();
+    assert!(storage.backlinks("唯一.qword").await.unwrap().is_empty());
+}
+
+#[tokio::test]
 /// 反链按来源标题排序，同一篇笔记的多行按行号升序。
 async fn sorts_by_title_then_line() {
     let (storage, _config, _vault) = testutil::test_storage().await;

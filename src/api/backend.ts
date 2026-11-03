@@ -10,6 +10,7 @@ import type {
   ConnectionTestResult,
   DataFolderTarget,
   DataLocations,
+  DictionaryEntry,
   DictationResult,
   FontSizeId,
   GenerationInput,
@@ -134,6 +135,16 @@ export function writeNote(path: string, content: string): Promise<number> {
 /** 新建空白笔记文件。 */
 export function createNoteFile(folder: string, title: string): Promise<NoteFile> {
   return call<NoteFile>("create_note_file", { folder, title });
+}
+
+/** 新建单词组文件；content 是含一个空页的 JSON，标题不带扩展名。 */
+export function createWordGroup(folder: string, title: string): Promise<NoteFile> {
+  return call<NoteFile>("create_word_group", { folder, title });
+}
+
+/** 查询内置 ECDICT 词典；未收录返回 null，失败由调用方按静默可手填处理。 */
+export function lookupDictionaryWord(word: string): Promise<DictionaryEntry | null> {
+  return call<DictionaryEntry | null>("lookup_dictionary_word", { word });
 }
 
 /** 新建文件夹。 */

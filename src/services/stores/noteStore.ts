@@ -5,6 +5,7 @@ import { errorMessage } from "./uiStore";
 import { refreshStats } from "./reviewStore";
 import { createNotePersistence } from "../notePersistence";
 import { remapNotePath, type NotePathChange } from "../../domain/notePaths";
+import { stripDocumentExtension } from "../../domain/documentKind";
 
 /**
  * 笔记域 store：笔记列表、文件夹与当前打开的笔记。
@@ -88,6 +89,18 @@ export async function createNoteFile(folder: string, title: string, body: string
   await selectNote(file.path);
 }
 
+/**
+ * 新建单词组文件并打开。
+ *
+ * 契约：不产生 .md；文件内容由后端写入（含一个空页），卡片要等保存正文时才会物化，
+ * 所以这里只建文件、刷新列表并选中，卡片加载交给编排层。
+ */
+export async function createWordGroup(folder: string, title: string): Promise<void> {
+  const file = await backend.createWordGroup(folder, title);
+  await refreshNotes();
+  await selectNote(file.path);
+}
+
 /** 新建文件夹并记住（Vault 扫描不到空文件夹）。 */
 export async function createFolder(path: string): Promise<void> {
   await backend.createFolder(path);
@@ -136,7 +149,7 @@ async function renameEntry(oldPath: string, newPath: string, rename: typeof back
     notePersistence.rename(oldPath, renamed);
     notes.value = notes.value.map((note) => {
       const path = remap(note.path);
-      return { ...note, path, title: path.split("/").pop()!.replace(/\.md$/i, "") };
+      return { ...note, path, title: stripDocumentExtension(path.split("/").pop()!) };
     });
     extraFolders.value = extraFolders.value.map(remap);
     if (activeNotePath.value) activeNotePath.value = remap(activeNotePath.value);

@@ -5,6 +5,7 @@
 
 use super::{
     links::{self, ResolveNote},
+    notes::NoteEntry,
     Storage,
 };
 use crate::{error::CommandError, models::Backlink};
@@ -19,8 +20,13 @@ impl Storage {
     /// （同一份 links::resolve）。同一行出现两处链接只保留一条预览。
     pub async fn backlinks(&self, path: &str) -> Result<Vec<Backlink>, CommandError> {
         let entries = self.inner.notes.snapshot();
+        // 候选只取 Markdown：单词组不参与双链，同名 .qword 不得抢走解析结果。
+        let markdown: Vec<&NoteEntry> = entries
+            .iter()
+            .filter(|entry| entry.kind.is_markdown())
+            .collect();
         // ResolveNote 借用索引条目，借用期内不能再移动 entries。
-        let notes: Vec<ResolveNote<'_>> = entries
+        let notes: Vec<ResolveNote<'_>> = markdown
             .iter()
             .map(|entry| ResolveNote {
                 path: &entry.path,
@@ -29,7 +35,7 @@ impl Storage {
             })
             .collect();
         let mut found: Vec<Backlink> = Vec::new();
-        for entry in &entries {
+        for entry in markdown {
             if entry.path == path {
                 continue;
             }

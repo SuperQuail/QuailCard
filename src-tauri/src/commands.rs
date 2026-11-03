@@ -12,9 +12,9 @@ use crate::{
         ProviderInput, ProviderSummary, RenameOutcome, SaveNoteInput, StudyStats, VaultStatus,
     },
     paths,
-    services::{link_update, AppServices, SpeechService},
+    services::{link_update, word_group as word_group_service, AppServices, SpeechService},
     storage::Storage,
-    vaultfs::{remover_for, VaultState},
+    vaultfs::{documents::DocumentKind, remover_for, VaultState},
 };
 
 // ============================================================
@@ -84,19 +84,14 @@ pub async fn list_notes(storage: State<'_, Storage>) -> Result<Vec<NoteSummary>,
     storage.list_notes().await
 }
 
-/// 读取笔记文件内容与修改时间。
+/// 读取笔记文件内容与修改时间；标题按文档类型去掉 .md/.qword 扩展名。
 #[tauri::command]
 pub async fn read_note(
     vault: State<'_, VaultState>,
     path: String,
 ) -> Result<NoteFile, CommandError> {
     let (content, mtime) = vault.read_note(&path)?;
-    let title = path
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(&path)
-        .trim_end_matches(".md")
-        .to_string();
+    let title = crate::vaultfs::documents::title_from_path(&path);
     Ok(NoteFile {
         path,
         title,
@@ -106,12 +101,23 @@ pub async fn read_note(
 }
 
 /// 保存笔记文件并同步索引。
+///
+/// 单词组是 JSON 文档：先校验再落盘，并物化听写卡；非法内容不写盘。
 #[tauri::command]
 pub async fn write_note(
     vault: State<'_, VaultState>,
     storage: State<'_, Storage>,
     input: SaveNoteInput,
 ) -> Result<i64, CommandError> {
+    if DocumentKind::of_path(&input.path) == Some(DocumentKind::WordGroup) {
+        return word_group_service::save(
+            vault.inner(),
+            storage.inner(),
+            &input.path,
+            &input.content,
+        )
+        .await;
+    }
     let mtime = vault.write_note(&input.path, &input.content)?;
     storage
         .upsert_note_index(&input.path, &input.content, mtime)

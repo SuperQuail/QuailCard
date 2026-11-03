@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { BookOpen, PanelRightClose, PanelRightOpen, Pencil } from "@lucide/vue";
 
-defineProps<{
+withDefaults(defineProps<{
   notePath?: string;
   panelOpen: boolean;
   reading?: boolean;
+  /** 阅读模式入口开关：单词组等非 Markdown 编辑区传 false 直接隐藏按钮。 */
+  readingEnabled?: boolean;
   editorError?: string;
   inline?: boolean;
-}>();
+}>(), { readingEnabled: true });
 const emit = defineEmits<{ "toggle-panel": []; "toggle-reading": [] }>();
 
 </script>
@@ -16,7 +18,7 @@ const emit = defineEmits<{ "toggle-panel": []; "toggle-reading": [] }>();
   <!-- 标签存在时操作并入同一行；空工作区仍只显示紧凑的角落按钮。 -->
   <header class="note-toolbar z-20 flex flex-col items-end gap-2 text-[11px] text-ink-3" :class="inline ? 'relative' : 'absolute right-6 top-2 max-w-[calc(100%_-_48px)]'">
     <div class="note-actions flex shrink-0 items-center gap-1" role="group" aria-label="笔记操作">
-      <button v-if="notePath" type="button" class="icon-btn" :aria-label="reading ? '切换到编辑模式' : '切换到阅读模式'" :title="reading ? '切换到编辑模式' : '切换到阅读模式'" @click="emit('toggle-reading')">
+      <button v-if="notePath && readingEnabled" type="button" class="icon-btn" :aria-label="reading ? '切换到编辑模式' : '切换到阅读模式'" :title="reading ? '切换到编辑模式' : '切换到阅读模式'" @click="emit('toggle-reading')">
         <Pencil v-if="reading" :size="16" :stroke-width="1.8" aria-hidden="true" />
         <BookOpen v-else :size="16" :stroke-width="1.8" aria-hidden="true" />
       </button>

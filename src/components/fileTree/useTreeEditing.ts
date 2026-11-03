@@ -1,8 +1,12 @@
 import { nextTick, ref } from "vue";
+import { documentExtensionOf, MARKDOWN_EXTENSION, stripDocumentExtension } from "../../domain/documentKind";
+
+/** 树内新建的文档类型：笔记、文件夹与单词组走同一套行内输入框。 */
+export type CreatingKind = "note" | "folder" | "wordGroup";
 
 /** 新建中的条目：parent 为 null 表示根级。 */
 export interface CreatingState {
-  kind: "note" | "folder";
+  kind: CreatingKind;
   parent: string | null;
 }
 
@@ -36,7 +40,7 @@ export function useTreeEditing() {
   }
 
   /** 进入新建模式：展开父文件夹并聚焦输入框。 */
-  function startCreating(kind: "note" | "folder", parent: string | null, onExpand?: (path: string) => void): void {
+  function startCreating(kind: CreatingKind, parent: string | null, onExpand?: (path: string) => void): void {
     creating.value = { kind, parent };
     createValue.value = "";
     if (parent && onExpand) {
@@ -46,7 +50,7 @@ export function useTreeEditing() {
   }
 
   /** 提交新建：把结果交还回调，由调用方 emit。 */
-  function commitCreate(onCreate: (kind: "note" | "folder", parent: string | null, value: string) => void): void {
+  function commitCreate(onCreate: (kind: CreatingKind, parent: string | null, value: string) => void): void {
     const state = creating.value;
     const value = createValue.value.trim();
     if (!state || !value) {
@@ -68,13 +72,20 @@ export function useTreeEditing() {
     renaming.value = { kind, key, value: currentName };
   }
 
-  /** 由旧路径和新名称计算完整新路径（笔记自动补 .md 后缀）。 */
+  /**
+   * 由旧路径和新名称计算完整新路径。
+   *
+   * 契约：文件夹保持纯名称；笔记按旧路径的扩展名补全（x.qword 保持 .qword，x.md 保持 .md）。
+   * 用户可能连扩展名一起改，先去掉已知扩展名再补回旧类型，避免出现 a.md.qword。
+   */
   function renamePath(oldPath: string, newName: string, isFolder: boolean): string {
     const index = oldPath.lastIndexOf("/");
     const parent = index >= 0 ? oldPath.slice(0, index) : "";
-    let name = newName.trim();
-    if (!isFolder && !name.toLowerCase().endsWith(".md")) {
-      name = `${name}.md`;
+    const typed = newName.trim();
+    let name = typed;
+    if (!isFolder) {
+      const extension = documentExtensionOf(oldPath) || MARKDOWN_EXTENSION;
+      name = `${stripDocumentExtension(typed)}${extension}`;
     }
     return parent ? `${parent}/${name}` : name;
   }

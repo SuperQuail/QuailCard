@@ -8,19 +8,22 @@
   - 用户提供笔记、图片、文本，AI 转换为记忆卡片格式。
   - 格式一：单词记忆卡，必须包含听写模块，根据释义默写。
   - 格式二：问答卡，根据笔记生成一问一答。
+  - 格式三：单词组，`.qword` 文件按页编写单词（单词 / 音标 / 释义 / 例句），不依赖 Markdown 笔记。
   - 扩展：AI 判定不是新卡片格式，而是问答卡的评分方式。
 - API：支持 OpenAI 与 Claude 格式，支持自定义 BaseURL 和类 OpenCode 的供应商选择。
-- 数据事实：笔记是真实 `.md` 文件；卡片与其调度状态、复习历史存于 Vault 内 `.quailcard/**/*.json`（每篇笔记一个文件）；供应商配置（providers.toml）、加密凭据密文（vault.bin）、全局设置（settings.toml）存于应用数据目录；ECDICT 词典为随应用打包的只读资源（rusqlite 访问）；前端不直接读写文件系统。
+- 数据事实：笔记是真实 `.md` 文件；单词组是真实 `.qword` 文件（JSON、`formatVersion` 版本化，每页一个单词，页面 `id` 即卡片身份）；卡片与其调度状态、复习历史存于 Vault 内 `.quailcard/**/*.json`（每篇笔记一个文件，单词组在 `.quailcard/wordgroups/**/*.json`）；供应商配置（providers.toml）、加密凭据密文（vault.bin）、全局设置（settings.toml）存于应用数据目录；ECDICT 词典为随应用打包的只读资源（rusqlite 访问）；前端不直接读写文件系统。
 - 双链与反链（强制）：`[[目标]]` 的解析规则由 **`src/domain/linkResolution.fixture.json`** 与 `storage/links.rs` 共同锁定，前端 `domain/links.ts` 与后端 `links::resolve` 必须给出完全相同的结果——改规则先改夹具，两端测试会同时失败。偏移一律用 **UTF-16**（与卡片 `CardSource` 同坐标系）。改名/移动时若设置开启（默认开），后端按"先规划后改名"改写引用方正文，并同步平移卡片来源锚点；与改写区间相交的锚点保持原样而不猜测位置。
 - frontmatter（强制）：只读，应用**永不写回** YAML 头；解析失败按"无元数据"处理，绝不阻断 Vault 扫描。标签 = frontmatter 声明（在前）+ 正文行内标签，合并去重后限量；别名参与双链解析与补全。
 - 图片附件动作（强制）：编辑器里图片的**复制 / 下载 / 在文件夹中定位**一律由后端解析引用（`vaultfs::attachments::attachment_file_path`）并校验后再执行，前端只提交 `(notePath, source)`，**不提交任何文件路径**。另存目标只能来自系统另存对话框，写入必须"同目录临时文件 + rename"替换，禁止半截文件；单个附件上限 10 MiB（`MAX_IMAGE_BYTES`）对导入、读取、复制、另存统一生效。剪贴板写入走 `image_clipboard`（解码 → RGBA → arboard），失败只回 `CLIPBOARD_ERROR`/`SAVE_ERROR`/`IMAGE_DECODE_ERROR` 等安全错误码。
 - 删除语义（强制）：删除默认走**系统回收站**（`vaultfs::remove` 的 `Remover` 策略），只有用户在设置里显式开启「永久删除」才直删。回收站模式下笔记的卡片文件必须**移到 `.quailcard/.detached/`** 而不是删除，使用户从回收站还原笔记后卡片与复习历史能自动接回（接回发生在卡片加载前，见 `storage/card_detach.rs`）。隔离区不属于 active 数据：加载跳过、损坏跳过、超过 30 天的孤儿在打开 Vault 时清理。
+- 单词组（强制）：`.qword` 是用户数据、不可再生——保存前先解析校验（版本熔断、页面 id 唯一、字段上限），校验失败**绝不写盘**；写完文件后同步卡片。卡片是派生数据但复习历史不是：改名/移动保留历史，只有页面被删除时才删对应卡片；草稿页（缺单词或释义）不新建也不删已有卡片。打开 Vault 或重扫时对账卡片，解析失败只记日志并跳过，绝不自动重置文件。单词组不参与双链解析、不写 frontmatter、不进入 Agent 读写范围；卡片路径固定为 `.quailcard/wordgroups/`，扩展名判定集中在 `vaultfs/documents.rs` 与 `src/domain/documentKind.ts`。
 
 ## 目录与分层边界
 
 - `src-tauri/src/commands.rs`：只做参数接收、状态注入和委派；不写 SQL、HTTP、业务规则。
 - `src-tauri/src/storage/`：唯一允许应用数据持久化的层；TOML 配置 + JSON 数据文件，按聚合拆存储域（settings / providers / vault_file / cards / review / search / notes）。
 - `src-tauri/src/scheduler.rs`：纯领域调度算法，不依赖存储实现或 Tauri。
+- `src-tauri/src/word_group.rs`：单词组文件格式的纯领域解析与校验，不依赖存储实现或 Tauri。
 - `src-tauri/src/vault_crypto.rs`：纯密码学原语与载荷编解码；保险库服务只做会话与编排。
 - `src-tauri/src/services/`：用例编排；依赖接口，不直接依赖存储与网络实现。
 - `src-tauri/src/ai/`：供应商协议适配。`llm/` 是供应商中立调用层（词汇、chunk、assembler、failure、adapter 契约、runtime），`adapters/` 每个协议一个 adapter，`tools/` 是工具声明与参数校验，`generation/`、`evaluation/` 各自持有提示词、profile 与工具集。

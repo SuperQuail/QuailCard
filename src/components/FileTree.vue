@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { Brain, ChevronRight, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, Search, X } from "@lucide/vue";
+import { Brain, ChevronRight, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, Languages, Search, X } from "@lucide/vue";
 import { computed, nextTick, ref, watch } from "vue";
 import { parentPath, remapNotePath, type NoteMoveItem, type NotePathChange } from "../domain/notePaths";
+import { documentTitleOf, isWordGroupPath } from "../domain/documentKind";
 import type { NoteSummary } from "../domain/types";
+import type { CreatingKind } from "./fileTree/useTreeEditing";
 import FileTreeMenu from "./fileTree/FileTreeMenu.vue";
 import { buildTree, countNotes, findFolderNode, flattenRows, hasChildren, noteFolder, rowIndent, rowKey, type TreeRow } from "./fileTree/treeModel";
 import { useTreeContextMenu } from "./fileTree/useTreeContextMenu";
@@ -25,6 +27,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   "select-note": [path: string];
   "note-created": [folder: string, title: string];
+  "word-group-created": [folder: string, title: string];
   "folder-created": [path: string];
   "rename-note": [oldPath: string, newPath: string, done: (error?: string) => void];
   "delete-note": [path: string];
@@ -149,10 +152,16 @@ function selectNote(path: string): void {
 }
 
 /** 进入新建模式（同时关闭菜单）。 */
-function beginCreating(kind: "note" | "folder", parent: string | null): void {
+function beginCreating(kind: CreatingKind, parent: string | null): void {
   searchQuery.value = "";
   startCreating(kind, parent, expandFolder);
   closeMenu();
+}
+
+/** 行内新建输入框占位文案：三种入口各自的名称提示。 */
+function createPlaceholder(kind: CreatingKind): string {
+  if (kind === "folder") return "文件夹名称";
+  return kind === "wordGroup" ? "单词组名称" : "笔记名称";
 }
 
 /** 进入重命名模式（同时关闭菜单）。 */
@@ -163,17 +172,19 @@ function beginRenaming(kind: "folder" | "note", key: string): void {
     startRenaming(kind, key, node ? node.name : key.split("/").pop() ?? key);
   } else {
     const note = props.notes.find((item) => item.path === key);
-    startRenaming(kind, key, note?.title ?? "");
+    startRenaming(kind, key, note?.title ?? documentTitleOf(key));
   }
   closeMenu();
 }
 
-/** 提交新建：转换为对应 emit。 */
-function submitCreate(kind: "note" | "folder", parent: string | null, value: string): void {
-  if (kind === "note") {
-    emit("note-created", parent ?? "", value);
-  } else {
+/** 提交新建：转换为对应 emit；单词组交给壳层建 .qword，不生成 .md。 */
+function submitCreate(kind: CreatingKind, parent: string | null, value: string): void {
+  if (kind === "wordGroup") {
+    emit("word-group-created", parent ?? "", value);
+  } else if (kind === "folder") {
     emit("folder-created", parent ? `${parent}/${value}` : value);
+  } else {
+    emit("note-created", parent ?? "", value);
   }
 }
 
@@ -268,7 +279,7 @@ function handleTreeKeydown(event: KeyboardEvent): void {
         :ref="setCreateInput"
         v-model="createValue"
         class="tree-input my-0.5 ml-2"
-        :placeholder="creating.kind === 'note' ? '笔记名称' : '文件夹名称'"
+        :placeholder="createPlaceholder(creating.kind)"
         @keyup.enter="commitCreate(submitCreate)"
         @keyup.esc="cancelCreate"
         @blur="cancelCreate"
@@ -315,7 +326,7 @@ function handleTreeKeydown(event: KeyboardEvent): void {
             v-model="createValue"
             class="tree-input my-px"
             :style="{ marginLeft: rowIndent(row.depth + 1) }"
-            :placeholder="creating.kind === 'note' ? '笔记名称' : '文件夹名称'"
+            :placeholder="createPlaceholder(creating.kind)"
             @keyup.enter="commitCreate(submitCreate)"
             @keyup.esc="cancelCreate"
             @blur="cancelCreate"
@@ -351,7 +362,8 @@ function handleTreeKeydown(event: KeyboardEvent): void {
             @pointerdown="onPointerDown(row, $event)"
           >
             <span v-if="!searchTerm" class="w-4 shrink-0" />
-            <FileText :size="13" :stroke-width="1.6" class="shrink-0" />
+            <Languages v-if="isWordGroupPath(row.note.path)" :size="13" :stroke-width="1.6" class="shrink-0" aria-label="单词组" />
+            <FileText v-else :size="13" :stroke-width="1.6" class="shrink-0" />
             <span class="min-w-0 flex-1">
               <span class="block truncate">{{ row.note.title }}</span>
               <span v-if="searchTerm" class="block truncate text-[10px] font-normal text-ink-3">{{ row.note.path }}</span>
@@ -377,6 +389,7 @@ function handleTreeKeydown(event: KeyboardEvent): void {
       v-if="context"
       :context="context"
       @create-note="(parent) => beginCreating('note', parent ?? resolveActiveFolder())"
+      @create-word-group="(parent) => beginCreating('wordGroup', parent ?? resolveActiveFolder())"
       @create-folder="(parent) => beginCreating('folder', parent)"
       @rename="beginRenaming"
       @remove="removeEntry"

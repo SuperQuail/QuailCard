@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ArrowUp, Plus, Settings, Square, X } from "@lucide/vue";
 import type { NoteSummary } from "../../domain/types";
+import { documentKindOf } from "../../domain/documentKind";
 import type { AgentImage } from "../../domain/agent";
 import { clipboardImages } from "../../services/agentImages";
 import { looksLikeBilibili } from "../../services/videoLink";
@@ -27,7 +28,10 @@ const textarea = ref<HTMLTextAreaElement | null>(null);
 const canSend = computed(() => (!!props.draft.trim() || !!props.images?.length) && props.ready && !props.running && !props.loading && !props.readingImages);
 /** 检测到 B 站链接时给出提示，实际解析与取字仍由后端工具完成。 */
 const videoLinkHint = computed(() => looksLikeBilibili(props.draft));
-const availableNotes = computed(() => props.notes.filter(note => note.path.toLowerCase().includes(noteQuery.value.toLowerCase())));
+/** 引用候选只含 Markdown：单词组不进入 Agent 读写范围（后端同样不支持）。 */
+const availableNotes = computed(() => props.notes.filter(note => documentKindOf(note.path) === "markdown" && note.path.toLowerCase().includes(noteQuery.value.toLowerCase())));
+/** 是否存在任何可引用的 Markdown 笔记：只由单词组组成的 Vault 要提示"暂无笔记"。 */
+const hasMarkdownNotes = computed(() => props.notes.some(note => documentKindOf(note.path) === "markdown"));
 let resizeObserver: ResizeObserver | undefined;
 let observedWidth = 0;
 
@@ -104,7 +108,7 @@ onBeforeUnmount(() => resizeObserver?.disconnect());
             <input type="checkbox" :checked="selectedPaths.includes(note.path)" @change="toggleNote(note.path)" />
             <span class="min-w-0 break-all">{{ note.path }}</span>
           </label>
-          <p v-if="!availableNotes.length" class="px-2 py-3 text-[13px] text-ink-2">{{ notes.length ? '没有匹配的笔记' : '知识库中暂无笔记' }}</p>
+          <p v-if="!availableNotes.length" class="px-2 py-3 text-[13px] text-ink-2">{{ hasMarkdownNotes ? '没有匹配的笔记' : '知识库中暂无笔记' }}</p>
         </div>
         <VirtualScrollbar :target="noteListScroll" />
         <button v-if="selectedPaths.length" class="ghost-btn mt-2" @click="emit('scope', [])">切回全库</button>

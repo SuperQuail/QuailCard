@@ -115,6 +115,14 @@ export async function createNoteFile(folder: string, title: string, body: string
   }
 }
 
+/** 新建单词组并打开：与新建笔记一样，打开后立即让卡片区就绪。 */
+export async function createWordGroup(folder: string, title: string): Promise<void> {
+  await noteStore.createWordGroup(folder, title);
+  if (noteStore.activeNotePath.value) {
+    await cardStore.loadActiveCards(noteStore.activeNotePath.value);
+  }
+}
+
 /** 删除笔记：当前笔记被删时回退并同步卡片区；`permanent` 由用例层按设置显式传入。 */
 export async function deleteNoteFile(path: string, permanent: boolean): Promise<void> {
   await noteStore.deleteNoteFile(path, permanent);
@@ -148,6 +156,7 @@ export function useAppState() {
     rescanVault,
     selectNote,
     createNoteFile,
+    createWordGroup,
     deleteNoteFile,
     deleteFolder,
   };

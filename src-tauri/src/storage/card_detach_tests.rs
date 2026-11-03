@@ -9,6 +9,8 @@ use super::*;
 use crate::{
     models::{CardInput, ReviewRating, SubmitReviewInput},
     storage::{testutil, Storage},
+    word_group,
+    word_group::{WordGroupDocument, WordPage, FORMAT_VERSION},
 };
 
 /// 构造测试卡片输入；同一笔记的卡片只需最小合法字段。
@@ -384,4 +386,48 @@ async fn reattach_derives_note_path_when_missing() {
     let cards = reopened.list_note_cards(note).await.expect("查询卡片失败");
     assert_eq!(cards.len(), 1);
     assert_eq!(cards[0].id, "card-1");
+}
+
+#[tokio::test]
+/// 单词组卡片分离到 .detached/wordgroups/，笔记还原后自动接回。
+async fn detaches_and_reattaches_word_group_cards() {
+    let (storage, config, vault) = testutil::test_storage().await;
+    let note = "单词/组.qword";
+    std::fs::create_dir_all(vault.path().join("单词")).expect("创建单词组目录失败");
+    std::fs::write(vault.path().join(note), "{}").expect("写入单词组失败");
+    let document = WordGroupDocument {
+        format_version: FORMAT_VERSION,
+        words: vec![WordPage {
+            id: "p1".to_string(),
+            word: "ephemeral".to_string(),
+            meaning: "短暂的".to_string(),
+            ..WordPage::default()
+        }],
+    };
+    storage.sync_word_group_cards(note, &document).unwrap();
+    assert_eq!(storage.list_note_cards(note).await.unwrap().len(), 1);
+
+    // 笔记进系统回收站：文件消失，卡片被分离。
+    std::fs::remove_file(vault.path().join(note)).expect("删除单词组失败");
+    storage.detach_note_paths(note).await.expect("分离失败");
+    let detached = vault
+        .path()
+        .join(CARDS_DIR_NAME)
+        .join(DETACHED_DIR_NAME)
+        .join("wordgroups/单词/组.json");
+    assert!(detached.is_file(), "隔离区应保留 wordgroups 命名空间");
+    assert!(storage.list_note_cards(note).await.unwrap().is_empty());
+
+    // 从回收站还原同名 .qword：重新打开 Vault 时卡片与历史接回。
+    let restored = word_group::serialize(&document).unwrap();
+    std::fs::write(vault.path().join(note), restored).expect("还原单词组失败");
+    let reopened = Storage::open(config.path()).expect("重开存储失败");
+    reopened
+        .open_vault(vault.path(), &[])
+        .await
+        .expect("重开 Vault 失败");
+    let cards = reopened.list_note_cards(note).await.expect("查询卡片失败");
+    assert_eq!(cards.len(), 1);
+    assert_eq!(cards[0].id, "p1");
+    assert!(!detached.exists(), "接回后不应残留隔离文件");
 }

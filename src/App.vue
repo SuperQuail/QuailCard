@@ -8,6 +8,7 @@ import NoteSidePanel from "./components/side/NoteSidePanel.vue";
 import NoteSidebar from "./components/side/NoteSidebar.vue";
 import CommandPalette from "./components/CommandPalette.vue";
 import EditorPane from "./components/EditorPane.vue";
+import WordGroupEditor from "./components/wordGroup/WordGroupEditor.vue";
 import QuickCapture from "./components/QuickCapture.vue";
 import ReviewWorkspace from "./components/ReviewWorkspace.vue";
 import TypingWorkspace from "./components/typing/TypingWorkspace.vue";
@@ -32,10 +33,12 @@ import { useReviewSessionFlow } from "./composables/useReviewSessionFlow";
 import { useTypingSessionFlow } from "./composables/useTypingSessionFlow";
 import { useToast } from "./composables/useToast";
 import { countContentWords } from "./markdown/model";
-import { createNoteFile, clearSelectedNote, initialize, leaveVault, openVault, rescanVault, selectNote } from "./services/appState";
-import { activeCardId, activeNoteCards } from "./services/stores/cardStore";
-import { activeNoteContent, activeNotePath, extraFolders, findNote, notes, renameNoteFile, renameFolder, createFolder, updateNoteDraft, notePersistence, noteOperationBusy, lastNotePathChange } from "./services/stores/noteStore";
+import { createNoteFile, createWordGroup, clearSelectedNote, initialize, leaveVault, openVault, rescanVault, selectNote } from "./services/appState";
+import { activeCardId, activeNoteCards, reloadActiveCards } from "./services/stores/cardStore";
+import { activeNoteContent, activeNotePath, extraFolders, findNote, notes, renameNoteFile, renameFolder, createFolder, updateNoteDraft, notePersistence, noteOperationBusy, lastNotePathChange, savedAt } from "./services/stores/noteStore";
 import { remapNotePath } from "./domain/notePaths";
+import { documentKindOf } from "./domain/documentKind";
+import { linkTargetsOf } from "./domain/links";
 import { resolveError } from "./utils/errorMessage";
 import { activeProviderId, providers, setActiveProvider } from "./services/stores/providerStore";
 import { closeVideoWorkspace, openVideoWorkspace, videoState } from "./services/stores/videoStore";
@@ -69,7 +72,14 @@ const vaultName = computed(() => {
 });
 /** 完整文件夹列表：由笔记路径与已建空文件夹推导。 */
 const folderList = computed(() => deriveFolderNames(notes.value, extraFolders.value));
-const wordCount = computed(() => countContentWords(activeNoteContent.value));
+/** 当前文档类型：按路径扩展名判定，决定用哪个编辑器与状态栏口径，不新增 NoteSummary 字段。 */
+const activeDocumentKind = computed(() => (activeNotePath.value ? documentKindOf(activeNotePath.value) : "markdown"));
+/** 双链候选：单词组不参与 [[双链]]，编辑器补全与侧栏解析都只拿 Markdown。 */
+const linkTargets = computed(() => linkTargetsOf(notes.value));
+/** 状态栏计数：Markdown 数字数；单词组数已物化卡片（N 词）。 */
+const wordCount = computed(() => (activeDocumentKind.value === "wordGroup" ? activeNoteCards.value.length : countContentWords(activeNoteContent.value)));
+/** 状态栏单位：单词组显示「词」，Markdown 保持「字」。 */
+const wordUnit = computed(() => (activeDocumentKind.value === "wordGroup" ? "词" : "字"));
 
 const { cardEditor, cardSaving, reselectCardSource, openCardEditor, openCardEditorFromSelection, handleCardEditorSave, editCard, handleDeleteCard } = useCardEditorFlow({ showToast });
 
@@ -80,6 +90,15 @@ watch(lastNotePathChange, (change) => {
   activeNoteCards.value = activeNoteCards.value.map((card) => ({ ...card, notePath: remap(card.notePath) }));
   if (cardEditor.value.notePath) cardEditor.value.notePath = remap(cardEditor.value.notePath);
 }, { flush: "sync" });
+
+/**
+ * 单词组保存后后端会物化卡片：savedAt 变化且当前是组时重载卡片列表。
+ * 只读面板与状态栏「N 词」都依赖这份列表，刷新失败只提示不阻塞编辑。
+ */
+watch(savedAt, () => {
+  if (activeDocumentKind.value !== "wordGroup" || !activeNotePath.value) return;
+  void reloadActiveCards().catch((error) => { showToast(resolveError(error)); });
+});
 
 /** 回传改名结果，输入框只有在后端确认成功后才关闭。 */
 async function handleRename(oldPath: string, newPath: string, done: (error?: string) => void, action: typeof renameNoteFile): Promise<void> {
@@ -93,6 +112,36 @@ const agent = useAgentFlow({ showToast, selectNote, openSplit: openAiSplit });
 const agentState = agent.state;
 const { reviewSession, startReviewFromNote, startTodayReview } = useReviewSessionFlow({ showToast });
 const { typingSession, startTypingFromNote, startTypingAll } = useTypingSessionFlow({ showToast });
+
+/**
+ * 进入复习或打字前先落盘当前草稿并重载卡片。
+ * 单词组卡片只在保存时物化，不同步就会漏掉刚填好的页。
+ */
+async function flushDocumentCards(): Promise<boolean> {
+  if (!activeNotePath.value) return true;
+  try {
+    await notePersistence.flush(activeNotePath.value);
+    await reloadActiveCards();
+    return true;
+  } catch (error) {
+    showToast(resolveError(error));
+    return false;
+  }
+}
+
+/** 进入复习：落盘失败只提示，不带着旧卡片开始。 */
+async function startReviewCurrent(): Promise<void> {
+  if (await flushDocumentCards()) {
+    startReviewFromNote();
+  }
+}
+
+/** 进入打字背诵：与复习同一套前置，词池才包含刚保存的单词。 */
+async function startTypingCurrent(): Promise<void> {
+  if (await flushDocumentCards()) {
+    startTypingFromNote();
+  }
+}
 /** 打开视频转笔记：收起其他工作区后再加载设置与组件状态。 */
 async function openVideo(): Promise<void> {
   agentState.open = false;
@@ -128,6 +177,7 @@ const { backlinks, jumpToHeading, openBacklink, openLink } = useNoteSidebars({
   openNote: handleSelectNote,
   createNote: (title, folder) => handleQuickCapture(title, folder, ""),
   askConfirm,
+  linkTargets,
 });
 /** 编辑器视口顶部的字符偏移：右侧大纲据此高亮当前小节。 */
 const viewportOffset = ref(0);
@@ -142,6 +192,15 @@ const { tabs: noteTabs, close: closeNoteTab, closing: tabClosing } = useNoteTabs
 async function submitQuickCapture(title: string, folder: string, body: string): Promise<void> {
   if (await handleQuickCapture(title, folder, body)) {
     captureOpen.value = false;
+  }
+}
+
+/** 新建单词组：失败只提示原因，成功后由 appState 选中并加载卡片。 */
+async function handleCreateWordGroup(folder: string, title: string): Promise<void> {
+  try {
+    await createWordGroup(folder, title);
+  } catch (error) {
+    showToast(resolveError(error));
   }
 }
 
@@ -306,6 +365,7 @@ watch(() => theme.value, applyTheme);
             :path-change="lastNotePathChange"
             @select-note="(path) => void handleSelectNote(path)"
             @note-created="(folder, title) => void createNoteFile(folder, title, '')"
+            @word-group-created="(folder, title) => void handleCreateWordGroup(folder, title)"
             @folder-created="(path) => void createFolder(path)"
             @rename-note="(oldPath, newPath, done) => void handleRename(oldPath, newPath, done, renameNoteFile)"
             @delete-note="(path) => void handleDeleteSelection([{ kind: 'note', path }])"
@@ -350,8 +410,21 @@ watch(() => theme.value, applyTheme);
       />
       <VideoWorkspace v-if="videoState.open" @close="closeVideoWorkspace" @open-note="(path: string) => void handleSelectNote(path)" />
       <main v-if="!agentState.open && !reviewSession.open && !videoState.open && !typingSession.open" class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-bg-paper">
+        <WordGroupEditor
+          v-if="activeNote && activeDocumentKind === 'wordGroup'"
+          :note-path="activeNote.path"
+          :tabs="noteTabs" :tabs-busy="tabClosing || noteOperationBusy"
+          @select-tab="(path) => void handleSelectNote(path)" @close-tab="(path) => void closeNoteTab(path)"
+          :panel-open="panelOpen"
+          @toggle-panel="panelOpen = !panelOpen"
+          :content="activeNoteContent"
+          :read-only="noteOperationBusy"
+          @save-content="updateNoteDraft"
+          @start-review="() => void startReviewCurrent()"
+          @start-typing="() => void startTypingCurrent()"
+        />
         <EditorPane
-          v-if="activeNote"
+          v-else-if="activeNote"
           ref="editorPane"
           :note-path="activeNote.path"
           :tabs="noteTabs" :tabs-busy="tabClosing || noteOperationBusy"
@@ -365,7 +438,7 @@ watch(() => theme.value, applyTheme);
           @card-click="activeCardId = $event"
           @create-card="openCardEditorFromSelection"
           @save-content="updateNoteDraft"
-          :link-targets="notes"
+          :link-targets="linkTargets"
           @viewport-change="viewportOffset = $event"
           @open-link="(target) => void openLink(target)"
           @toast="showToast"
@@ -390,16 +463,17 @@ watch(() => theme.value, applyTheme);
           <NoteSidePanel
             v-if="activeNote"
             :cards="activeNoteCards"
-            :content="activeNoteContent"
+            :content="activeDocumentKind === 'wordGroup' ? '' : activeNoteContent"
             :active-card-id="activeCardId"
             :viewport-offset="viewportOffset"
             :backlinks="backlinks"
+            :word-group="activeDocumentKind === 'wordGroup'"
             @edit-card="editCard"
             @delete-card="(id) => void handleDeleteCard(id)"
             @add-card="openCardEditor(activeNoteCards[0]?.kind ?? 'qa')"
             @open-ai-split="openAiSplit"
-            @start-review="startReviewFromNote"
-            @start-typing="startTypingFromNote"
+            @start-review="() => void startReviewCurrent()"
+            @start-typing="() => void startTypingCurrent()"
             @collapse="panelOpen = false"
             @jump="jumpToHeading"
             @open-backlink="(path, line) => void openBacklink(path, line)"
@@ -413,6 +487,7 @@ watch(() => theme.value, applyTheme);
     <StatusBar
       :vault-name="vaultName"
       :word-count="wordCount"
+      :word-unit="wordUnit"
       :due-count="studyStats.dueCount"
       :note-title="activeNote?.title ?? ''"
       :dark="theme === 'dark'"

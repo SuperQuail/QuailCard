@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ArrowLeft, Keyboard } from "@lucide/vue";
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import TypingSetup from "./TypingSetup.vue";
 import TypingBoard from "./TypingBoard.vue";
 import TypingStatsBar from "./TypingStatsBar.vue";
 import TypingSummary from "./TypingSummary.vue";
 import VirtualScrollbar from "../VirtualScrollbar.vue";
 import { createTypingSession, type TypingScope } from "../../services/typingSession";
+import { documentKindOf } from "../../domain/documentKind";
 import { practiceSettings, setPracticeSettings } from "../../services/stores/typingStore";
 import { resolveError } from "../../utils/errorMessage";
 import type { PracticeSettings } from "../../domain/types";
@@ -32,6 +33,9 @@ const emit = defineEmits<{ close: [] }>();
 
 /** 正文滚动容器：浮层滚动条必须与它同级渲染。 */
 const bodyScroll = ref<HTMLElement | null>(null);
+
+/** 来源是否为单词组：范围叫法与空态文案都要跟着换，避免把 .qword 说成「笔记」。 */
+const wordGroupSource = computed(() => Boolean(props.notePath) && documentKindOf(props.notePath as string) === "wordGroup");
 
 const session = createTypingSession({
   notePath: props.notePath,
@@ -230,11 +234,13 @@ onBeforeUnmount(() => {
         <section v-else-if="phase === 'empty'" class="flex min-h-full items-center justify-center px-6">
           <div class="max-w-[420px] text-center">
             <Keyboard :size="28" class="mx-auto text-ink-3" />
-            <p class="mt-4 text-[14px] font-medium">这个范围里还没有单词卡</p>
-            <p class="mt-1 text-[12px] leading-5 text-ink-3">先在笔记里用 AI 拆卡或手动添加单词卡，再回来练习。</p>
+            <p class="mt-4 text-[14px] font-medium">{{ wordGroupSource ? "这个单词组还没有已保存的单词" : "这个范围里还没有单词卡" }}</p>
+            <p class="mt-1 text-[12px] leading-5 text-ink-3">
+              {{ wordGroupSource ? "在单词组里填好单词与释义，保存后就会自动生成可练习的卡片。" : "先在笔记里用 AI 拆卡或手动添加单词卡，再回来练习。" }}
+            </p>
             <div class="mt-6 flex justify-center gap-2">
               <button v-if="activeScope === 'note'" type="button" class="ghost-btn border border-hairline" @click="switchScope('all')">
-                切换到全部单词卡
+                {{ wordGroupSource ? "切换到全部单词" : "切换到全部单词卡" }}
               </button>
               <button type="button" class="ghost-btn" @click="close">返回</button>
             </div>
@@ -251,6 +257,7 @@ onBeforeUnmount(() => {
             :can-switch-scope="Boolean(notePath)"
             :audio-ready="audioReady"
             :audio-progress="audioProgress"
+            :note-label="wordGroupSource ? '本组' : '本笔记'"
             @start="startPractice"
             @scope="switchScope"
             @settings="changeSettings"

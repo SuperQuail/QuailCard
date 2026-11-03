@@ -4,7 +4,8 @@
 //! - 应用配置目录：settings.toml（界面/行为设置）、providers.toml（供应商）、
 //!   vault.bin（加密凭据保险库密文）；
 //! - Vault 内 .quailcard/：镜像笔记目录树，每篇笔记一个卡片 JSON
-//!   （卡片 + 调度状态 + 复习历史同文件），另有顶层 config.json 存附件目录。
+//!   （卡片 + 调度状态 + 复习历史同文件），另有顶层 config.json 存附件目录；
+//!   单词组卡片放在 .quailcard/wordgroups/ 命名空间（保留子目录）。
 //!
 //! ## 演化契约（防迁移四律，新增依赖或字段时必须遵守）
 //! 1. 读容忍：缺字段取默认值、未知字段忽略、禁止 deny_unknown_fields；
@@ -45,6 +46,7 @@ mod search;
 mod settings;
 mod vault_file;
 pub(crate) mod video;
+mod word_groups;
 
 use std::{
     path::{Path, PathBuf},
