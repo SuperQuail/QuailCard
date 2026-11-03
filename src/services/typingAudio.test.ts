@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as backend from "../api/backend";
 import {
   cacheAudioInBackground,
@@ -36,14 +36,15 @@ class FakeUtterance {
   }
 }
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("Audio", FakeAudio);
   vi.stubGlobal("SpeechSynthesisUtterance", FakeUtterance);
-  Object.defineProperty(window, "speechSynthesis", {
-    configurable: true,
-    value: { cancel: () => {}, speak: (utterance: FakeUtterance) => spoken.push(utterance.text) },
-  });
+  vi.stubGlobal("speechSynthesis", { cancel: () => {}, speak: (utterance: FakeUtterance) => spoken.push(utterance.text) });
   played.length = 0;
   spoken.length = 0;
   resetAudioCache();
