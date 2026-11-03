@@ -29,6 +29,7 @@ const emit = defineEmits<{
   "add-card": [];
   "open-ai-split": [];
   "start-review": [];
+  "start-typing": [];
   collapse: [];
   jump: [from: number];
   "open-backlink": [path: string, line: number];
@@ -81,6 +82,7 @@ function selectTab(id: string): void {
         @add-card="emit('add-card')"
         @open-ai-split="emit('open-ai-split')"
         @start-review="emit('start-review')"
+        @start-typing="emit('start-typing')"
         @collapse="emit('collapse')"
       />
       <OutlinePanel

@@ -5,6 +5,9 @@ pub use generation::*;
 mod providers;
 pub use providers::*;
 
+mod practice;
+pub use practice::*;
+
 /// OpenAI 订阅登录供应商的稳定子类型。
 pub const OPENAI_SUBSCRIPTION_PROVIDER_TYPE: &str = "openai_subscription";
 /// OpenAI 订阅登录内置供应商的稳定标识。
@@ -324,6 +327,8 @@ pub struct BootstrapData {
     pub permanent_delete: bool,
     /// 改名/移动笔记时是否自动改写其他笔记里的双链。
     pub update_links_on_rename: bool,
+    /// 打字背诵偏好：每词重复遍数与每页单词数。
+    pub practice_settings: PracticeSettings,
 }
 
 /// 学习统计。

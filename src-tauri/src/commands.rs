@@ -8,8 +8,8 @@ use crate::{
     error::CommandError,
     models::{
         BootstrapData, ConnectionTestResult, DataFolderTarget, DataLocations, NoteFile,
-        NoteSummary, OpenAiLoginMode, OpenAiLoginStart, OpenAiLoginStatus, ProviderInput,
-        ProviderSummary, RenameOutcome, SaveNoteInput, StudyStats, VaultStatus,
+        NoteSummary, OpenAiLoginMode, OpenAiLoginStart, OpenAiLoginStatus, PracticeSettings,
+        ProviderInput, ProviderSummary, RenameOutcome, SaveNoteInput, StudyStats, VaultStatus,
     },
     paths,
     services::{link_update, AppServices, SpeechService},
@@ -259,6 +259,7 @@ pub async fn get_bootstrap_data(
         ai_grading_enabled: storage.get_ai_grading_enabled().await?,
         permanent_delete: storage.get_permanent_delete().await,
         update_links_on_rename: storage.get_update_links_on_rename().await,
+        practice_settings: storage.get_practice_settings().await,
     })
 }
 
@@ -300,6 +301,16 @@ pub async fn set_ai_grading_enabled(
 ) -> Result<bool, CommandError> {
     storage.set_ai_grading_enabled(enabled).await?;
     Ok(enabled)
+}
+
+/// 保存打字背诵偏好并回显后端实际生效的值。
+#[tauri::command]
+pub async fn set_practice_settings(
+    storage: State<'_, Storage>,
+    input: PracticeSettings,
+) -> Result<PracticeSettings, CommandError> {
+    storage.set_practice_settings(&input).await?;
+    Ok(storage.get_practice_settings().await)
 }
 
 /// 查询学习统计。

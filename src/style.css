@@ -715,6 +715,183 @@ kbd.kbd {
   display: none;
 }
 
+/* ============================================================
+ * 打字背诵：格子、字母判定、记忆遍模糊与连击 / 翻页特效。
+ * 颜色与字号走设计 token；动画由文件末尾的 reduced-motion 块统一降级。
+ * ============================================================ */
+.typing-board {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 1100px) {
+  .typing-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .typing-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.typing-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 108px;
+  padding: 9px 12px 11px;
+  border: 1px solid var(--qc-hairline);
+  border-radius: 10px;
+  background: var(--qc-bg-paper);
+  transition: border-color 140ms, box-shadow 140ms, opacity 140ms;
+}
+
+.typing-cell.is-pending {
+  opacity: 0.4;
+}
+
+.typing-cell.is-active {
+  border-color: var(--qc-accent);
+  box-shadow: 0 0 0 2px var(--qc-accent-soft);
+}
+
+.typing-cell.is-done {
+  background: var(--qc-bg-side);
+}
+
+.typing-cell.is-perfect {
+  border-color: var(--qc-success);
+}
+
+.typing-cell-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--qc-ink-3);
+}
+
+.typing-cell-index {
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--qc-bg-hover);
+  font-variant-numeric: tabular-nums;
+}
+
+.typing-cell-pass {
+  margin-left: auto;
+}
+
+.typing-cell-empty {
+  font-size: 11px;
+  color: var(--qc-ink-3);
+}
+
+.typing-cell-meaning {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--qc-ink-2);
+}
+
+.typing-cell-phonetic {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--qc-ink-3);
+}
+
+.typing-cell-word {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: 0.08em;
+  word-break: break-all;
+}
+
+.typing-cell-letter.is-correct {
+  color: var(--qc-success);
+  animation: qc-letter-pop 140ms ease-out;
+}
+
+.typing-cell-letter.is-wrong {
+  color: var(--qc-danger);
+  text-decoration: underline wavy;
+  text-underline-offset: 3px;
+  animation: qc-letter-shake 160ms ease-in-out;
+}
+
+.typing-cell-letter.is-missed {
+  color: var(--qc-danger);
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.typing-cell-letter.is-pending {
+  color: var(--qc-ink-3);
+}
+
+/* 记忆遍：还没打出来的目标字母保持模糊，打出来立即变清晰并着色。 */
+.typing-cell-letter.is-sealed {
+  filter: blur(4px);
+  user-select: none;
+}
+
+/* 记忆遍：目标、释义与音标一起模糊，用户打出的字母仍然清晰可见。 */
+.typing-board .is-blurred {
+  filter: blur(5px);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* 记忆遍期间，本页前面已完成的记录也一起模糊，防止照着抄。 */
+.typing-board.is-memory .typing-cell.is-done .typing-cell-meaning,
+.typing-board.is-memory .typing-cell.is-done .typing-cell-phonetic,
+.typing-board.is-memory .typing-cell.is-done .typing-cell-word {
+  filter: blur(5px);
+  user-select: none;
+  pointer-events: none;
+}
+
+.qc-combo-pulse {
+  animation: qc-combo-pulse 420ms ease-out;
+}
+
+@keyframes qc-letter-pop {
+  from {
+    opacity: 0.4;
+    transform: translateY(1px);
+  }
+}
+
+@keyframes qc-letter-shake {
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes qc-combo-pulse {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    color: var(--qc-warning);
+    transform: scale(1.45);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

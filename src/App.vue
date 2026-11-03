@@ -10,6 +10,7 @@ import CommandPalette from "./components/CommandPalette.vue";
 import EditorPane from "./components/EditorPane.vue";
 import QuickCapture from "./components/QuickCapture.vue";
 import ReviewWorkspace from "./components/ReviewWorkspace.vue";
+import TypingWorkspace from "./components/typing/TypingWorkspace.vue";
 import Ribbon from "./components/Ribbon.vue";
 import SettingsOverlay from "./components/SettingsOverlay.vue";
 import StatusBar from "./components/StatusBar.vue";
@@ -28,6 +29,7 @@ import { useConfirm } from "./composables/useConfirm";
 import { useNoteSidebars } from "./composables/useNoteSidebars";
 import { useNoteTabs } from "./composables/useNoteTabs";
 import { useReviewSessionFlow } from "./composables/useReviewSessionFlow";
+import { useTypingSessionFlow } from "./composables/useTypingSessionFlow";
 import { useToast } from "./composables/useToast";
 import { countContentWords } from "./markdown/model";
 import { createNoteFile, clearSelectedNote, initialize, leaveVault, openVault, rescanVault, selectNote } from "./services/appState";
@@ -90,16 +92,19 @@ const { aiSplit, providerConfigured, openAiSplit, closeAiSplit, startAiSplit, st
 const agent = useAgentFlow({ showToast, selectNote, openSplit: openAiSplit });
 const agentState = agent.state;
 const { reviewSession, startReviewFromNote, startTodayReview } = useReviewSessionFlow({ showToast });
+const { typingSession, startTypingFromNote, startTypingAll } = useTypingSessionFlow({ showToast });
 /** 打开视频转笔记：收起其他工作区后再加载设置与组件状态。 */
 async function openVideo(): Promise<void> {
   agentState.open = false;
   reviewSession.value.open = false;
+  typingSession.value.open = false;
   await openVideoWorkspace();
 }
 /** 工作区互斥展示；隐藏复习时保留已挂载的会话和作答草稿。 */
-watch(() => reviewSession.value.open, (open) => { if (open) { agentState.open = false; videoState.open = false; } }, { flush: "sync" });
-watch(() => agentState.open, (open) => { if (open) { reviewSession.value.open = false; videoState.open = false; } }, { flush: "sync" });
-watch(() => videoState.open, (open) => { if (open) { agentState.open = false; reviewSession.value.open = false; } }, { flush: "sync" });
+watch(() => reviewSession.value.open, (open) => { if (open) { agentState.open = false; videoState.open = false; typingSession.value.open = false; } }, { flush: "sync" });
+watch(() => agentState.open, (open) => { if (open) { reviewSession.value.open = false; videoState.open = false; typingSession.value.open = false; } }, { flush: "sync" });
+watch(() => videoState.open, (open) => { if (open) { agentState.open = false; reviewSession.value.open = false; typingSession.value.open = false; } }, { flush: "sync" });
+watch(() => typingSession.value.open, (open) => { if (open) { agentState.open = false; reviewSession.value.open = false; videoState.open = false; } }, { flush: "sync" });
 /** 确认框状态：壳层只做 Promise 接线，业务策略仍在各用例层。 */
 const { request: confirmRequest, ask: askConfirm, settle: settleConfirm } = useConfirm();
 const { handleSelectNote, handleQuickCapture, handleDeleteSelection, handleMoveEntries } = useNoteActions({
@@ -110,6 +115,7 @@ const { handleSelectNote, handleQuickCapture, handleDeleteSelection, handleMoveE
     agentState.open = false;
     reviewSession.value.open = false;
     videoState.open = false;
+    typingSession.value.open = false;
     if (window.innerWidth < 768) {
       treeOpen.value = false;
     }
@@ -160,6 +166,8 @@ function runCommand(actionId: string): void {
     captureOpen.value = true;
   } else if (actionId === "today-review") {
     startTodayReview();
+  } else if (actionId === "typing-practice") {
+    startTypingAll();
   } else if (actionId === "toggle-theme") {
     toggleTheme();
   } else if (actionId === "toggle-panel") {
@@ -212,7 +220,7 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   if (event.key === "Escape") {
     closeTopOverlay();
   }
-  if (event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "b" && !agentState.open && !reviewSession.value.open && !videoState.open
+  if (event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "b" && !agentState.open && !reviewSession.value.open && !videoState.open && !typingSession.value.open
     && !settingsOpen.value && !paletteOpen.value && !captureOpen.value && !cardEditor.value.open && !aiSplit.value.open) {
     event.preventDefault();
     panelOpen.value = !panelOpen.value;
@@ -269,6 +277,7 @@ watch(() => theme.value, applyTheme);
         :agent-open="agentState.open"
         :review-open="reviewSession.open"
         :video-open="videoState.open"
+        :typing-open="typingSession.open"
         @open-agent="agent.open"
         @open-video="openVideo"
         :tree-open="treeOpen"
@@ -278,6 +287,7 @@ watch(() => theme.value, applyTheme);
         @open-palette="paletteOpen = true"
         @open-capture="captureOpen = true"
         @open-review="startTodayReview"
+        @open-typing="startTypingAll"
         @toggle-theme="toggleTheme"
         @open-settings="settingsOpen = true"
       />
@@ -320,7 +330,7 @@ watch(() => theme.value, applyTheme);
         @refresh-children="agent.refreshChildren"
         @interrupt-child="agent.interruptChild" @message-child="agent.messageChild" @resume-goal="agent.resumeGoal"
         :ai-grading="aiGradingEnabled" :review-flow="agent.reviewFlow"
-        :suspended="settingsOpen || paletteOpen || captureOpen || reviewSession.open || aiSplit.open || Boolean(agentState.change)"
+        :suspended="settingsOpen || paletteOpen || captureOpen || reviewSession.open || typingSession.open || aiSplit.open || Boolean(agentState.change)"
         @send="agent.send" @stop="agent.stop" @new-session="agent.select()" @session="agent.select" @delete-session="agent.deleteSession"
         @close="agentState.open = false" @settings="settingsOpen = true"
         @draft="agentState.draft = $event" @scope="agentState.selectedPaths = $event"
@@ -331,8 +341,15 @@ watch(() => theme.value, applyTheme);
         :suspended="!reviewSession.open || settingsOpen || paletteOpen || captureOpen || aiSplit.open || cardEditor.open || Boolean(agentState.change)"
         @close="reviewSession.open = false"
       />
+      <TypingWorkspace
+        v-if="typingSession.id" v-show="typingSession.open" :key="typingSession.id"
+        :title="typingSession.title" :note-path="typingSession.notePath" :scope="typingSession.scope"
+        :confirm="askConfirm"
+        :suspended="!typingSession.open || settingsOpen || paletteOpen || captureOpen || aiSplit.open || cardEditor.open || Boolean(agentState.change) || Boolean(confirmRequest)"
+        @close="typingSession.open = false"
+      />
       <VideoWorkspace v-if="videoState.open" @close="closeVideoWorkspace" @open-note="(path: string) => void handleSelectNote(path)" />
-      <main v-if="!agentState.open && !reviewSession.open && !videoState.open" class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-bg-paper">
+      <main v-if="!agentState.open && !reviewSession.open && !videoState.open && !typingSession.open" class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-bg-paper">
         <EditorPane
           v-if="activeNote"
           ref="editorPane"
@@ -366,7 +383,7 @@ watch(() => theme.value, applyTheme);
         class="shrink-0 overflow-hidden border-l border-hairline bg-bg-side transition-[width] duration-200 max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-40 max-lg:shadow-xl"
         id="note-card-panel"
         :inert="!panelOpen"
-        v-show="!agentState.open && !reviewSession.open && !videoState.open"
+        v-show="!agentState.open && !reviewSession.open && !videoState.open && !typingSession.open"
         :class="panelOpen ? 'w-[300px]' : 'w-0 border-l-0'"
       >
         <div class="h-full w-[300px]">
@@ -382,6 +399,7 @@ watch(() => theme.value, applyTheme);
             @add-card="openCardEditor(activeNoteCards[0]?.kind ?? 'qa')"
             @open-ai-split="openAiSplit"
             @start-review="startReviewFromNote"
+            @start-typing="startTypingFromNote"
             @collapse="panelOpen = false"
             @jump="jumpToHeading"
             @open-backlink="(path, line) => void openBacklink(path, line)"
@@ -389,7 +407,7 @@ watch(() => theme.value, applyTheme);
         </div>
       </aside>
       <!-- 中窄窗口右栏改为抽屉，避免两侧栏同时挤压正文。 -->
-      <div v-if="panelOpen && !agentState.open && !reviewSession.open && !videoState.open" class="fixed inset-0 z-30 bg-ink/30 lg:hidden" @click="panelOpen = false" />
+      <div v-if="panelOpen && !agentState.open && !reviewSession.open && !videoState.open && !typingSession.open" class="fixed inset-0 z-30 bg-ink/30 lg:hidden" @click="panelOpen = false" />
     </div>
 
     <StatusBar

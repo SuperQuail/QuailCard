@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { BookOpen, Brain, PanelRightClose, Pencil, Plus, Sparkles, Trash2, Type } from "@lucide/vue";
+import { BookOpen, Brain, Keyboard, PanelRightClose, Pencil, Plus, Sparkles, Trash2, Type } from "@lucide/vue";
+import { computed } from "vue";
 import type { NoteCard } from "../domain/types";
 
 /**
  * 卡片列表：只负责"当前笔记有哪些卡片"的展示与操作上抛。
  * 大纲与反链已拆到右栏同级页签（NoteSidePanel），这里不再兼任第二职责。
  */
-defineProps<{
+const props = defineProps<{
   cards: NoteCard[];
   activeCardId: string | null;
 }>();
@@ -17,8 +18,12 @@ const emit = defineEmits<{
   "add-card": [];
   "open-ai-split": [];
   "start-review": [];
+  "start-typing": [];
   "collapse": [];
 }>();
+
+/** 只有存在单词卡时才能进入打字背诵；问答卡没有可打的英文。 */
+const hasVocabulary = computed(() => props.cards.some((card) => card.kind === "vocabulary"));
 
 /** 返回卡片类型的展示标签。 */
 function kindLabel(kind: string): string {
@@ -89,6 +94,9 @@ function kindIcon(kind: string) {
     <footer class="space-y-1.5 border-t border-hairline p-3">
       <button type="button" class="primary-btn w-full" :disabled="cards.length === 0" @click="emit('start-review')">
         <Brain :size="14" />复习这篇笔记
+      </button>
+      <button type="button" class="ghost-btn w-full justify-center border border-hairline" :disabled="!hasVocabulary" @click="emit('start-typing')">
+        <Keyboard :size="13" />打字背诵单词
       </button>
       <div class="grid grid-cols-2 gap-1.5">
         <button type="button" class="ghost-btn justify-center border border-hairline" @click="emit('open-ai-split')">

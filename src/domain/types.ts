@@ -204,6 +204,12 @@ export interface ProviderSummary {
   status: string;
 }
 
+/** 打字背诵偏好：每词重复遍数与每页单词数。 */
+export interface PracticeSettings {
+  repeatsPerWord: number;
+  wordsPerPage: number;
+}
+
 /** 应用启动数据。 */
 export interface BootstrapData {
   notes: NoteSummary[];
@@ -218,6 +224,8 @@ export interface BootstrapData {
   permanentDelete: boolean;
   /** 改名/移动笔记时是否自动改写其他笔记里的双链。 */
   updateLinksOnRename: boolean;
+  /** 打字背诵偏好：每词重复遍数与每页单词数。 */
+  practiceSettings: PracticeSettings;
 }
 
 /** 当前 Vault 的文件级配置。 */

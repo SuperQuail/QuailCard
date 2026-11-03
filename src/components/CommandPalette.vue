@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Brain, FilePlus2, FileText, Layers, PenLine, Search, Settings, Sparkles, SunMoon } from "@lucide/vue";
+import { Brain, FilePlus2, FileText, Keyboard, Layers, PenLine, Search, Settings, Sparkles, SunMoon } from "@lucide/vue";
 import { onMounted, ref } from "vue";
 
 /** 结果列表滚动容器：浮层滚动条与它同级。 */
@@ -37,6 +37,7 @@ const actions: Array<{ id: string; label: string; hint: string }> = [
   { id: "new-note", label: "新建笔记", hint: "Ctrl+N" },
   { id: "capture", label: "快速捕获", hint: "" },
   { id: "today-review", label: "开始今日复习", hint: "" },
+  { id: "typing-practice", label: "打字背诵单词", hint: "" },
   { id: "toggle-theme", label: "切换深色 / 浅色模式", hint: "" },
   { id: "toggle-panel", label: "显示 / 隐藏卡片面板", hint: "" },
   { id: "settings", label: "打开设置", hint: "" },
@@ -57,6 +58,9 @@ function resolveActionIcon(actionId?: string) {
   }
   if (actionId === "today-review") {
     return Brain;
+  }
+  if (actionId === "typing-practice") {
+    return Keyboard;
   }
   if (actionId === "toggle-theme") {
     return SunMoon;

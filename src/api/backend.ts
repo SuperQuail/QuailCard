@@ -23,6 +23,7 @@ import type {
   NoteSummary,
   OpenAiLoginStart,
   OpenAiLoginStatus,
+  PracticeSettings,
   ProviderInput,
   ProviderSummary,
   ReviewCard,
@@ -233,6 +234,11 @@ export function setPermanentDelete(enabled: boolean): Promise<boolean> {
 /** 设置"使用问答时启用AI评分"。 */
 export function setAiGradingEnabled(enabled: boolean): Promise<boolean> {
   return call<boolean>("set_ai_grading_enabled", { enabled });
+}
+
+/** 保存打字背诵偏好，返回后端实际生效的值。 */
+export function setPracticeSettings(settings: PracticeSettings): Promise<PracticeSettings> {
+  return call<PracticeSettings>("set_practice_settings", { input: settings });
 }
 
 /** 查询供应商列表。 */

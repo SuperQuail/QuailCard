@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::{envelope, Storage};
-use crate::{error::CommandError, paths, video::models::VideoSettings};
+use crate::{error::CommandError, models::PracticeSettings, paths, video::models::VideoSettings};
 
 /// 设置文件名，位于应用配置目录。
 pub(crate) const FILE_NAME: &str = "settings.toml";
@@ -33,6 +33,8 @@ pub(crate) struct SettingsFile {
     /// 视频转笔记设置。
     pub(crate) video: VideoSettings,
     pub(crate) agent: crate::agent_execution_settings::AgentExecutionSettings,
+    /// 打字背诵偏好。
+    pub(crate) practice: PracticeSettings,
 }
 
 impl Default for SettingsFile {
@@ -45,6 +47,7 @@ impl Default for SettingsFile {
             files: FileSettings::default(),
             video: VideoSettings::default(),
             agent: crate::agent_execution_settings::AgentExecutionSettings::default(),
+            practice: PracticeSettings::default(),
         }
     }
 }
@@ -137,6 +140,27 @@ impl Storage {
         let mut settings = self.inner.settings.lock().await;
         settings.ui.ai_grading_enabled = enabled;
         self.persist_settings(&settings)
+    }
+
+    /// 读取打字背诵偏好：手改坏的越界值在使用前钳制，不阻断练习入口。
+    pub async fn get_practice_settings(&self) -> PracticeSettings {
+        self.inner.settings.lock().await.practice.clamped()
+    }
+
+    /// 持久化打字背诵偏好；非法值直接拒绝，内存与磁盘都保持不变。
+    pub async fn set_practice_settings(
+        &self,
+        settings: &PracticeSettings,
+    ) -> Result<(), CommandError> {
+        if !settings.is_valid() {
+            return Err(CommandError::validation("打字练习参数超出允许范围"));
+        }
+        let mut current = self.inner.settings.lock().await;
+        let mut next = current.clone();
+        next.practice = settings.clone();
+        self.persist_settings(&next)?;
+        *current = next;
+        Ok(())
     }
 
     /// 读取"删除时跳过回收站"设置，默认关闭。
@@ -297,6 +321,81 @@ mod tests {
         // 循环写入 12 个后截断保留 vault-11..vault-2，置前的 vault-11 之外首位是 vault-10。
         assert_eq!(list[1], "C:\\vault-10");
         assert!(!list.contains(&"C:\\vault-0".to_string()));
+    }
+
+    #[tokio::test]
+    /// 打字练习偏好默认每词五遍、每页三个单词。
+    async fn defaults_to_five_repeats_and_three_words() {
+        let (storage, _config, _vault) = testutil::test_storage().await;
+        assert_eq!(
+            storage.get_practice_settings().await,
+            PracticeSettings::default()
+        );
+    }
+
+    #[tokio::test]
+    /// 练习偏好写透后重开仍保持，且不影响其他小节。
+    async fn persists_practice_settings_across_reopen() {
+        let (storage, config, _vault) = testutil::test_storage().await;
+        storage.set_font_size("large").await.unwrap();
+        storage
+            .set_practice_settings(&PracticeSettings {
+                repeats_per_word: 8,
+                words_per_page: 2,
+            })
+            .await
+            .unwrap();
+        let reopened = Storage::open(config.path()).unwrap();
+        assert_eq!(reopened.get_practice_settings().await.repeats_per_word, 8);
+        assert_eq!(reopened.get_font_size().await, "large");
+    }
+
+    #[tokio::test]
+    /// 非法练习参数被拒绝，且不覆盖已保存的值。
+    async fn rejects_invalid_practice_settings_without_mutation() {
+        let (storage, _config, _vault) = testutil::test_storage().await;
+        let error = storage
+            .set_practice_settings(&PracticeSettings {
+                repeats_per_word: 0,
+                words_per_page: 3,
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "VALIDATION_ERROR");
+        let error = storage
+            .set_practice_settings(&PracticeSettings {
+                repeats_per_word: 5,
+                words_per_page: 99,
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "VALIDATION_ERROR");
+        assert_eq!(
+            storage.get_practice_settings().await,
+            PracticeSettings::default()
+        );
+    }
+
+    #[tokio::test]
+    /// 被手改成越界值的配置在读取时钳制，不阻断练习入口。
+    async fn clamps_out_of_range_practice_settings_on_read() {
+        let (_storage, config, _vault) = testutil::test_storage().await;
+        let file = SettingsFile {
+            practice: PracticeSettings {
+                repeats_per_word: 99,
+                words_per_page: 0,
+            },
+            ..SettingsFile::default()
+        };
+        envelope::save_toml(&config.path().join(FILE_NAME), &file).unwrap();
+        let reopened = Storage::open(config.path()).unwrap();
+        assert_eq!(
+            reopened.get_practice_settings().await,
+            PracticeSettings {
+                repeats_per_word: PracticeSettings::MAX_REPEATS,
+                words_per_page: PracticeSettings::MIN_WORDS,
+            }
+        );
     }
 
     #[cfg(windows)]
