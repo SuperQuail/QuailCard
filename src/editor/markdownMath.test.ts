@@ -58,8 +58,23 @@ describe("单行公式渲染", () => {
     } finally { view.destroy(); }
   });
 
-  test("普通美元符号、多行公式与反引号里的美元符号都不当成公式", () => {
-    for (const doc of ["价格 $5 到 $10", "US$100 和 $200", "$$\nE=mc^2\n$$", "`$5` 反引号", "$x $ 结尾空格"]) {
+  test("多行 $$ 围栏整体渲染成块级预览，不再是散落的美元符号", () => {
+    // 光标停在公式之后，否则选区落在公式里会切回源码。
+    const doc = "$$\nE=mc^2\n$$\n\n后文";
+    const view = createView(doc, doc.length);
+    try {
+      const formula = view.dom.querySelector(".qc-math") as HTMLElement;
+      expect(formula).toBeTruthy();
+      // 跨行范围只能用块级装饰替换，DOM 也必须是块级元素。
+      expect(formula.tagName).toBe("DIV");
+      expect(formula.classList.contains("is-block")).toBe(true);
+      expect(formula.querySelector(".katex-display")).not.toBeNull();
+      expect(collectMath(view.state)).toEqual([{ from: 0, to: 12, source: "\nE=mc^2\n", display: true, block: true }]);
+    } finally { view.destroy(); }
+  });
+
+  test("普通美元符号、没有闭合的围栏与反引号里的美元符号都不当成公式", () => {
+    for (const doc of ["价格 $5 到 $10", "US$100 和 $200", "$$\nx\n没有闭合", "`$5` 反引号", "$x $ 结尾空格"]) {
       const view = createView(doc, doc.length);
       try {
         expect(collectMath(view.state)).toEqual([]);
@@ -72,7 +87,7 @@ describe("单行公式渲染", () => {
     const doc = "$\\frac{1}{2}$";
     const view = createView(doc, doc.length);
     try {
-      expect(collectMath(view.state)).toEqual([{ from: 0, to: 13, source: "\\frac{1}{2}", display: false }]);
+      expect(collectMath(view.state)).toEqual([{ from: 0, to: 13, source: "\\frac{1}{2}", display: false, block: false }]);
     } finally { view.destroy(); }
   });
 });

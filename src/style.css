@@ -317,13 +317,21 @@ kbd.kbd {
   vertical-align: middle;
 }
 
-/* 公式：行内公式留在正文流里，块级公式在当前行内独占一行。 */
+/* 公式：行内公式留在正文流里，块级公式在当前行内独占一行，跨行围栏公式整行铺满。 */
 .qc-math {
   padding: 0 2px;
 }
 
 .qc-math.is-display {
   display: inline-block;
+  width: 100%;
+  margin: 12px 0;
+  text-align: center;
+}
+
+/* 跨行 `$$` 围栏：装饰整行替换，按块级元素居中铺满。 */
+.qc-math.is-block {
+  display: block;
   width: 100%;
   margin: 12px 0;
   text-align: center;

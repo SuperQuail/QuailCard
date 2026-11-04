@@ -95,9 +95,14 @@ describe("行内投影", () => {
   });
 
   test("多行 LaTeX 逐字保留，单行公式只把定界符当语法", () => {
-    // 多行 $$ 不识别为公式，整段按原文保留。
-    for (const source of ["$$\n\\int_0^1 x^2\\,dx\n$$", "$$\nE=mc^2\n$$"]) {
+    // 独占一行的 $$ 围栏是一个完整的块级公式，公式体连同换行原样交给 KaTeX。
+    for (const [source, body] of [["$$\n\\int_0^1 x^2\\,dx\n$$", "\n\\int_0^1 x^2\\,dx\n"], ["$$\nE=mc^2\n$$", "\nE=mc^2\n"]] as Array<[string, string]>) {
       expect(parseNoteBlocks(source)).toEqual([{ type: "p", text: source }]);
+      expect(splitInline(source)).toEqual([{ text: body, kind: "math", display: true }]);
+    }
+    // 围栏没独占一行或没有闭合行时仍按原文保留，不能吞掉正文。
+    for (const source of ["前文 $$\nx\n$$", "$$\nx\n没有闭合"]) {
+      expect(splitInline(source).some((span) => span.kind === "math")).toBe(false);
       expect(splitInline(source).map((span) => span.text).join("")).toBe(source);
     }
     // 单行公式：块文本保留原始 Markdown，行内投影只剥掉定界符，公式体逐字不动。
@@ -127,7 +132,7 @@ describe("行内投影", () => {
     expect(splitInline("**未闭合的粗体")).toEqual([{ text: "**未闭合的粗体" }]);
   });
 
-test("单行公式识别为数学片段，多行与普通美元符号保持原文", () => {
+test("单行公式识别为数学片段，普通美元符号保持原文", () => {
     expect(splitInline("$x^2$")).toEqual([{ text: "x^2", kind: "math", display: false }]);
     expect(splitInline("$$E=mc^2$$")).toEqual([{ text: "E=mc^2", kind: "math", display: true }]);
     expect(splitInline("公式 $\\frac{1}{2}$ 结束")).toEqual([
@@ -143,7 +148,7 @@ test("单行公式识别为数学片段，多行与普通美元符号保持原�
       "US$100 和 $200",
       "$ x$ 前导空格",
       "$x $ 结尾空格",
-      "多行 $$\nE=mc^2\n$$ 不识别",
+      "前文 $$\nE=mc^2\n$$ 不识别",
       "`$5` 用反引号写字面量",
       "a$b 未闭合",
     ]) {
